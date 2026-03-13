@@ -1,9 +1,10 @@
-import { createClient } from "@supabase/supabase-js";
 import "react-native-url-polyfill/auto";
 
-// Replace these with the keys you just copied from the website
-const SUPABASE_URL = "https://enjujypttvirtyubzoud.supabase.co";
-const SUPABASE_ANON_KEY =
-  "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImVuanVqeXB0dHZpcnR5dWJ6b3VkIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjgzNzE2ODUsImV4cCI6MjA4Mzk0NzY4NX0.ThryoCXLrSmPOGLdrfAfl0qW805jO5xbKy5UFUC5o9U";
+import { createClient } from "@supabase/supabase-js";
 
-export const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+// Use the EXPO_PUBLIC prefix so the app can see them
+const supabaseUrl = "https://qsozjmavzjasbglvlvxj.supabase.co";
+const supabaseAnonKey =
+  "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InFzb3pqbWF2emphc2JnbHZsdnhqIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjkxNDYzMjcsImV4cCI6MjA4NDcyMjMyN30.xftgRcgbwwDatUmPj4jBUIQWbuw6E9dFWtlioetFAss";
+
+export const supabase = createClient(supabaseUrl, supabaseAnonKey);
