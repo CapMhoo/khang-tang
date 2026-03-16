@@ -35,26 +35,29 @@ export default function IndexPage() {
             onPress={() => router.push("/(auth)/vendor-auth")}
           />
 
-          <RoleOption
-            title="เจ้าหน้าที่ กทม."
-            description="ตรวจสอบความถูกต้องเรียบร้อย"
-            icon={
-              <MaterialCommunityIcons
-                name="shield-check"
-                size={30}
-                color="#64748B"
-              />
-            }
-            onPress={() => router.push("/officer-auth")}
-          />
+            <RoleOption
+              icon={
+                <MaterialCommunityIcons
+                  name="shield-check-outline"
+                  size={28}
+                  color="white"
+                />
+              }
+              title="เจ้าหน้าที่ กทม."
+              description="ตรวจการผู้ค้าและจัดการกฏเกณฑ์ในแต่ละโซน"
+              color="#0D9488"
+              isDark
+              isSelected={selectedRole === "officer"}
+              onPress={() => {
+                setSelectedRole("officer");
+                router.push("/(auth)/officer-auth");
+              }}
+            />
+          </View>
 
-          <RoleOption
-            title="ประชาชนทั่วไป"
-            description="ดูแผนที่โซนค้าขาย แจ้งปัญหา"
-            icon={<Ionicons name="people" size={30} color="#64748B" />}
-            onPress={() => console.log("Public Selected")}
-          />
-        </View>
+          {/* This empty view ensures the bottom margin is respected even when scrolling */}
+          <View style={styles.bottomSpacer} />
+        </ScrollView>
       </View>
     </SafeAreaView>
   );
