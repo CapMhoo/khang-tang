@@ -1,101 +1,154 @@
-// // import { Image } from 'expo-image';
-// // import { Platform, StyleSheet } from 'react-native';
+import { Ionicons } from "@expo/vector-icons";
+import { useLocalSearchParams, useRouter } from "expo-router";
+import React from "react";
+import {
+  Pressable,
+  SafeAreaView,
+  ScrollView,
+  StatusBar,
+  StyleSheet,
+  Text,
+  View,
+} from "react-native";
 
-// // import { HelloWave } from '@/components/hello-wave';
-// // import ParallaxScrollView from '@/components/parallax-scroll-view';
-// // import { ThemedText } from '@/components/themed-text';
-// // import { ThemedView } from '@/components/themed-view';
-// // import { Link } from 'expo-router';
+type OfficerHomeParams = {
+  officerName?: string;
+};
 
-// // export default function HomeScreen() {
-// //   return (
-// //     <ParallaxScrollView
-// //       headerBackgroundColor={{ light: '#A1CEDC', dark: '#1D3D47' }}
-// //       headerImage={
-// //         <Image
-// //           source={require('@/assets/images/partial-react-logo.png')}
-// //           style={styles.reactLogo}
-// //         />
-// //       }>
-// //       <ThemedView style={styles.titleContainer}>
-// //         <ThemedText type="title">Welcome!</ThemedText>
-// //         <HelloWave />
-// //       </ThemedView>
-// //       <ThemedView style={styles.stepContainer}>
-// //         <ThemedText type="subtitle">Step 1: Try it</ThemedText>
-// //         <ThemedText>
-// //           Edit <ThemedText type="defaultSemiBold">app/(tabs)/index.tsx</ThemedText> to see changes.
-// //           Press{' '}
-// //           <ThemedText type="defaultSemiBold">
-// //             {Platform.select({
-// //               ios: 'cmd + d',
-// //               android: 'cmd + m',
-// //               web: 'F12',
-// //             })}
-// //           </ThemedText>{' '}
-// //           to open developer tools.
-// //         </ThemedText>
-// //       </ThemedView>
-// //       <ThemedView style={styles.stepContainer}>
-// //         <Link href="/modal">
-// //           <Link.Trigger>
-// //             <ThemedText type="subtitle">Step 2: Explore</ThemedText>
-// //           </Link.Trigger>
-// //           <Link.Preview />
-// //           <Link.Menu>
-// //             <Link.MenuAction title="Action" icon="cube" onPress={() => alert('Action pressed')} />
-// //             <Link.MenuAction
-// //               title="Share"
-// //               icon="square.and.arrow.up"
-// //               onPress={() => alert('Share pressed')}
-// //             />
-// //             <Link.Menu title="More" icon="ellipsis">
-// //               <Link.MenuAction
-// //                 title="Delete"
-// //                 icon="trash"
-// //                 destructive
-// //                 onPress={() => alert('Delete pressed')}
-// //               />
-// //             </Link.Menu>
-// //           </Link.Menu>
-// //         </Link>
+export default function OfficerHomeScreen() {
+  const router = useRouter();
+  const params = useLocalSearchParams<OfficerHomeParams>();
+  const officerName = params.officerName || "เจ้าหน้าที่";
 
-// //         <ThemedText>
-// //           {`Tap the Explore tab to learn more about what's included in this starter app.`}
-// //         </ThemedText>
-// //       </ThemedView>
-// //       <ThemedView style={styles.stepContainer}>
-// //         <ThemedText type="subtitle">Step 3: Get a fresh start</ThemedText>
-// //         <ThemedText>
-// //           {`When you're ready, run `}
-// //           <ThemedText type="defaultSemiBold">npm run reset-project</ThemedText> to get a fresh{' '}
-// //           <ThemedText type="defaultSemiBold">app</ThemedText> directory. This will move the current{' '}
-// //           <ThemedText type="defaultSemiBold">app</ThemedText> to{' '}
-// //           <ThemedText type="defaultSemiBold">app-example</ThemedText>.
-// //         </ThemedText>
-// //       </ThemedView>
-// //     </ParallaxScrollView>
-// //   );
-// // }
+  return (
+    <SafeAreaView style={styles.container}>
+      <StatusBar barStyle="dark-content" />
 
-// // const styles = StyleSheet.create({
-// //   titleContainer: {
-// //     flexDirection: 'row',
-// //     alignItems: 'center',
-// //     gap: 8,
-// //   },
-// //   stepContainer: {
-// //     gap: 8,
-// //     marginBottom: 8,
-// //   },
-// //   reactLogo: {
-// //     height: 178,
-// //     width: 290,
-// //     bottom: 0,
-// //     left: 0,
-// //     position: 'absolute',
-// //   },
-// // });
+      <ScrollView
+        showsVerticalScrollIndicator={false}
+        contentContainerStyle={styles.scrollContent}
+      >
+        <View style={styles.topRow}>
+          <Text style={styles.greetingText}>สวัสดี {officerName}</Text>
+          <Pressable style={styles.bellButton} hitSlop={10}>
+            <Ionicons name="notifications-outline" size={24} color="#111827" />
+          </Pressable>
+        </View>
+
+        <Pressable style={styles.profileCard}>
+          <Text style={styles.profileText}>โปรไฟล์ ?</Text>
+        </Pressable>
+
+        <View style={styles.portalList}>
+          <PortalButton
+            title="ดูแผนที่โซนค้าขาย"
+            onPress={() => router.push("/(officer)/zone-map")}
+          />
+          <PortalButton
+            title="บันทึกการตรวจสอบ"
+            onPress={() => router.push("/(officer)/inspect")}
+          />
+          <PortalButton
+            title="รายงานปัญหา Traffy Fondue"
+            onPress={() => router.push("/(officer)/report")}
+          />
+        </View>
+      </ScrollView>
+    </SafeAreaView>
+  );
+}
+
+function PortalButton({
+  title,
+  onPress,
+}: {
+  title: string;
+  onPress: () => void;
+}) {
+  return (
+    <Pressable onPress={onPress} style={styles.portalButton}>
+      <View style={styles.portalIconCircle}>
+        <Ionicons name="location-sharp" size={22} color="#111827" />
+      </View>
+      <Text style={styles.portalTitle}>{title}</Text>
+    </Pressable>
+  );
+}
+
+const styles = StyleSheet.create({
+  container: {
+    flex: 1,
+    backgroundColor: "#F3F4F6",
+  },
+  scrollContent: {
+    paddingHorizontal: 20,
+    paddingTop: 10,
+    paddingBottom: 28,
+  },
+  topRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    paddingVertical: 10,
+  },
+  greetingText: {
+    fontSize: 28,
+    fontWeight: "800",
+    color: "#111827",
+  },
+  bellButton: {
+    width: 42,
+    height: 42,
+    borderRadius: 21,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  profileCard: {
+    backgroundColor: "white",
+    borderRadius: 18,
+    paddingVertical: 44,
+    paddingHorizontal: 18,
+    alignItems: "center",
+    justifyContent: "center",
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.08,
+    shadowRadius: 14,
+    elevation: 4,
+    marginTop: 18,
+    marginBottom: 18,
+  },
+  profileText: {
+    fontSize: 28,
+    fontWeight: "800",
+    color: "#111827",
+  },
+  portalList: {
+    gap: 14,
+  },
+  portalButton: {
+    backgroundColor: "#64748B",
+    borderRadius: 14,
+    paddingVertical: 24,
+    paddingHorizontal: 18,
+    flexDirection: "row",
+    alignItems: "center",
+  },
+  portalIconCircle: {
+    width: 46,
+    height: 46,
+    borderRadius: 23,
+    backgroundColor: "#E5E7EB",
+    alignItems: "center",
+    justifyContent: "center",
+    marginRight: 14,
+  },
+  portalTitle: {
+    fontSize: 20,
+    fontWeight: "800",
+    color: "white",
+  },
+});
 
 // import * as Location from "expo-location"; // Import Location
 // import React, { useEffect, useState } from "react";

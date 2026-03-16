@@ -1,7 +1,10 @@
 import { Ionicons, MaterialCommunityIcons } from "@expo/vector-icons";
+import bcrypt from "bcryptjs";
 import { useRouter } from "expo-router";
 import React, { useState } from "react";
 import {
+  ActivityIndicator,
+  Alert,
   SafeAreaView,
   StatusBar,
   StyleSheet,
@@ -10,6 +13,7 @@ import {
   TouchableOpacity,
   View,
 } from "react-native";
+import { supabase } from "../../lib/supabase";
 
 export default function OfficerAuth() {
   const router = useRouter();
@@ -19,8 +23,57 @@ export default function OfficerAuth() {
   const [loading, setLoading] = useState(false);
 
   const handleLogin = async () => {
-    // โลจิกสำหรับการเข้าสู่ระบบของเจ้าหน้าที่
-    router.replace("/(officer)"); // สมมติว่ามี group route ของเจ้าหน้าที่
+    if (!email || !password) {
+      Alert.alert("Error", "โปรดกรอกอีเมลและรหัสผ่านให้ครบถ้วน");
+      return;
+    }
+
+    setLoading(true);
+    try {
+      const emailInput = email.trim();
+      const { data: officer, error } = await supabase
+        .from("officers")
+        .select("id, password, first_name, last_name")
+        .ilike("email", emailInput)
+        .single();
+
+      if (error) {
+        console.error("Officer login query error:", error);
+        throw new Error(error.message);
+      }
+
+      if (!officer) {
+        throw new Error("ไม่พบบัญชีเจ้าหน้าที่นี้");
+      }
+
+      if (!officer.password) {
+        throw new Error("บัญชีนี้ยังไม่ได้ตั้งรหัสผ่านในระบบ");
+      }
+
+      const isPasswordValid = await bcrypt.compare(password, officer.password);
+      if (!isPasswordValid) {
+        throw new Error("รหัสผ่านไม่ถูกต้อง");
+      }
+
+      Alert.alert(
+        "สำเร็จ",
+        officer.first_name
+          ? `ยินดีต้อนรับคุณ ${officer.first_name}`
+          : "ยินดีต้อนรับ",
+      );
+      setPassword("");
+      router.replace({
+        pathname: "/(officer)",
+        params: { officerId: officer.id, officerName: officer.first_name },
+      });
+    } catch (err: any) {
+      Alert.alert(
+        "Error",
+        err?.message ?? "เกิดข้อผิดพลาด กรุณาลองใหม่อีกครั้ง",
+      );
+    } finally {
+      setLoading(false);
+    }
   };
 
   return (
@@ -111,7 +164,11 @@ export default function OfficerAuth() {
             onPress={handleLogin}
             disabled={loading}
           >
-            <Text style={styles.loginButtonText}>เข้าสู่ระบบ</Text>
+            {loading ? (
+              <ActivityIndicator color="white" />
+            ) : (
+              <Text style={styles.loginButtonText}>เข้าสู่ระบบ</Text>
+            )}
           </TouchableOpacity>
         </View>
       </View>

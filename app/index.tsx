@@ -93,7 +93,10 @@ export default function IndexPage() {
               color="#0D9488"
               isDark
               isSelected={selectedRole === "officer"}
-              onPress={() => setSelectedRole("officer")}
+              onPress={() => {
+                setSelectedRole("officer");
+                router.push("/(auth)/officer-auth");
+              }}
             />
           </View>
 
