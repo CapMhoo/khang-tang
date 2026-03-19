@@ -1,8 +1,10 @@
 import { Feather, Ionicons } from "@expo/vector-icons";
+import { Image } from "expo-image";
 import * as Location from "expo-location";
 import { useRouter } from "expo-router";
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import {
+  ActivityIndicator,
   Dimensions,
   Pressable,
   SafeAreaView,
@@ -11,138 +13,459 @@ import {
   StyleSheet,
   Text,
   TextInput,
-  TouchableOpacity,
   View,
 } from "react-native";
+import { Gesture, GestureDetector } from "react-native-gesture-handler";
 import MapView, { Circle, Marker, PROVIDER_GOOGLE } from "react-native-maps";
+import Animated, {
+  useAnimatedStyle,
+  useSharedValue,
+  withSpring,
+} from "react-native-reanimated";
+import { supabase } from "../../lib/supabase";
 
 const { height: SCREEN_HEIGHT } = Dimensions.get("window");
 
 type ZoneVendor = {
   id: string;
   name: string;
-  checkedBy: string;
-  checkInTime: string;
-  score: number;
+  checkInTime?: string;
+  checkOutTime?: string;
+  inspected?: boolean;
 };
 
 type Zone = {
-  id: number;
+  id: string;
   name: string;
   district: string;
   timeRange: string;
   currentShops: number;
   totalShops: number;
   color: string;
-  lat: number;
-  lng: number;
-  vendors: ZoneVendor[];
+  lat?: number;
+  lng?: number;
 };
 
+type StoreSheetParams = {
+  vendorId: string;
+  zoneId: string;
+  zoneName: string;
+  shopName: string;
+};
+
+type StoreContract = {
+  shop_name: string | null;
+  product_type: string | null;
+  vendors: { first_name: string | null; last_name: string | null } | null;
+} | null;
+
+type StoreCheckin = {
+  checkin_time: string;
+  checkout_time: string | null;
+  checkin_photo: string;
+  checkout_photo: string | null;
+} | null;
+
 export default function ZoneMapScreen() {
+  const router = useRouter();
   const [hasLocationPermission, setHasLocationPermission] = useState(false);
-  const [searchQuery, setSearchQuery] = useState("");
+
+  const [zones, setZones] = useState<Zone[]>([]);
+  const [zonesLoading, setZonesLoading] = useState(true);
+  const [zonesError, setZonesError] = useState<string | null>(null);
+
+  const [vendorsByZoneId, setVendorsByZoneId] = useState<
+    Record<string, ZoneVendor[]>
+  >({});
+  const [zoneDetailsLoadingById, setZoneDetailsLoadingById] = useState<
+    Record<string, boolean>
+  >({});
+  const [zoneDetailsErrorById, setZoneDetailsErrorById] = useState<
+    Record<string, string | null>
+  >({});
+
   const [activeTab, setActiveTab] = useState<"map" | "list">("map");
+  const [searchQuery, setSearchQuery] = useState("");
   const [selectedDistrictIndex, setSelectedDistrictIndex] = useState(0);
-  const [expandedZoneIds, setExpandedZoneIds] = useState<Set<number>>(
+  const [expandedZoneIds, setExpandedZoneIds] = useState<Set<string>>(
     () => new Set(),
   );
-  const router = useRouter();
+  const [selectedZoneId, setSelectedZoneId] = useState<string | null>(null);
+
+  const SHEET_HEIGHT = SCREEN_HEIGHT * 0.45;
+  const SHEET_PEEK = 84;
+  const SHEET_COLLAPSED_Y = SHEET_HEIGHT - SHEET_PEEK;
+  const sheetTranslateY = useSharedValue(0);
+  const sheetStartY = useSharedValue(0);
+
+  const STORE_SHEET_HEIGHT = SCREEN_HEIGHT * 0.72;
+  const STORE_SHEET_PEEK = 96;
+  const STORE_SHEET_COLLAPSED_Y = STORE_SHEET_HEIGHT - STORE_SHEET_PEEK;
+  const storeSheetTranslateY = useSharedValue(STORE_SHEET_COLLAPSED_Y);
+  const storeSheetStartY = useSharedValue(STORE_SHEET_COLLAPSED_Y);
+
+  const [storeSheet, setStoreSheet] = useState<StoreSheetParams | null>(null);
+  const [storeLoading, setStoreLoading] = useState(false);
+  const [storeError, setStoreError] = useState<string | null>(null);
+  const [storeContract, setStoreContract] = useState<StoreContract>(null);
+  const [storeCheckin, setStoreCheckin] = useState<StoreCheckin>(null);
+  const [photoViewer, setPhotoViewer] = useState<{
+    uri: string;
+    label: string;
+  } | null>(null);
+
+  const springConfig = {
+    damping: 28,
+    stiffness: 260,
+    mass: 0.8,
+    overshootClamping: true,
+    restDisplacementThreshold: 0.5,
+    restSpeedThreshold: 0.5,
+  } as const;
 
   useEffect(() => {
     (async () => {
-      let { status } = await Location.requestForegroundPermissionsAsync();
+      const { status } = await Location.requestForegroundPermissionsAsync();
       if (status === "granted") setHasLocationPermission(true);
     })();
   }, []);
 
-  // ข้อมูลสมมติสำหรับโซนค้าขาย
-  const zones: Zone[] = [
-    {
-      id: 1,
-      name: "ซอยพหลโยธิน 7 ถึงปากซอยอารีย์ 2",
-      district: "บางรัก",
-      timeRange: "19:00-01:00 น.",
-      currentShops: 4,
-      totalShops: 12,
-      color: "#F79432",
-      lat: 13.723,
-      lng: 100.529,
-      vendors: [
-        {
-          id: "v1",
-          name: "ไก่ทอดวิชัย",
-          checkedBy: "วิชัย",
-          checkInTime: "09:04",
-          score: 85,
-        },
-        {
-          id: "v2",
-          name: "ไก่ทอดวิชัย",
-          checkedBy: "วิชัย",
-          checkInTime: "09:04",
-          score: 85,
-        },
-        {
-          id: "v3",
-          name: "ไก่ทอดวิชัย",
-          checkedBy: "วิชัย",
-          checkInTime: "09:04",
-          score: 85,
-        },
-        {
-          id: "v4",
-          name: "ไก่ทอดวิชัย",
-          checkedBy: "วิชัย",
-          checkInTime: "09:04",
-          score: 85,
-        },
-      ],
-    },
-    {
-      id: 2,
-      name: "สุขุมวิท ซอย 38",
-      district: "คลองเตย",
-      timeRange: "10:00-18:00 น.",
-      currentShops: 20,
-      totalShops: 20,
-      color: "#FF3B30",
-      lat: 13.72,
-      lng: 100.579,
-      vendors: [
-        {
-          id: "v5",
-          name: "ก๋วยเตี๋ยวเรือ",
-          checkedBy: "สมชาย",
-          checkInTime: "10:12",
-          score: 92,
-        },
-      ],
-    },
-  ];
+  useEffect(() => {
+    let isMounted = true;
 
-  const districtOptions = [
-    "ทั้งหมด",
-    ...Array.from(new Set(zones.map((z) => z.district))),
-  ];
+    (async () => {
+      setZonesLoading(true);
+      setZonesError(null);
+
+      const { data, error } = await supabase
+        .from("zones")
+        .select(
+          "id, district_name, lat, lon, max_vendor, occupied, time_start, time_end",
+        );
+
+      if (!isMounted) return;
+
+      if (error) {
+        setZonesError(error.message);
+        setZones([]);
+        setZonesLoading(false);
+        return;
+      }
+
+      const zoneIds = (data ?? []).map((z: any) => String(z.id));
+      const contractsCountByZoneId = new Map<string, number>();
+      if (zoneIds.length > 0) {
+        const { data: contracts, error: contractsError } = await supabase
+          .from("contracts")
+          .select("zone_id")
+          .in("zone_id", zoneIds)
+          .limit(10000);
+
+        if (!isMounted) return;
+
+        if (contractsError) {
+          console.error("Fetch contracts count error:", contractsError);
+        } else {
+          for (const row of contracts ?? []) {
+            const zid = String((row as any).zone_id);
+            contractsCountByZoneId.set(
+              zid,
+              (contractsCountByZoneId.get(zid) ?? 0) + 1,
+            );
+          }
+        }
+      }
+
+      const formatted: Zone[] = (data || []).map((z: any) => {
+        const total = Number(z.max_vendor ?? 0) || 0;
+        const occupied = Number(z.occupied ?? 0) || 0;
+        const contractCount = contractsCountByZoneId.get(String(z.id)) ?? 0;
+        const current = Math.max(occupied, contractCount);
+
+        const color =
+          total > 0 && current >= total
+            ? "#FF3B30"
+            : total > 0 && current > total * 0.7
+              ? "#F79432"
+              : "#34C759";
+
+        const timeRange = `${z.time_start ?? "—"}-${z.time_end ?? "—"} น.`;
+        const district = (z.district_name as string | null) ?? "ไม่ระบุเขต";
+
+        return {
+          id: String(z.id),
+          name: district,
+          district,
+          timeRange,
+          currentShops: current,
+          totalShops: total,
+          color,
+          lat: typeof z.lat === "number" ? z.lat : undefined,
+          lng: typeof z.lon === "number" ? z.lon : undefined,
+        };
+      });
+
+      setZones(formatted);
+      setZonesLoading(false);
+    })();
+
+    return () => {
+      isMounted = false;
+    };
+  }, []);
+
+  const districtOptions = useMemo(
+    () => ["ทั้งหมด", ...Array.from(new Set(zones.map((z) => z.district)))],
+    [zones],
+  );
   const selectedDistrict =
     districtOptions[selectedDistrictIndex] ?? districtOptions[0];
 
-  const filteredZones = zones
-    .filter(
-      (z) => selectedDistrict === "ทั้งหมด" || z.district === selectedDistrict,
-    )
-    .filter((z) => {
-      const q = searchQuery.trim();
-      if (!q) return true;
-      return (
-        z.name.includes(q) ||
-        z.district.includes(q) ||
-        z.vendors.some((v) => v.name.includes(q))
-      );
-    });
+  const filteredZones = useMemo(() => {
+    const q = searchQuery.trim();
+    return zones
+      .filter(
+        (z) =>
+          selectedDistrict === "ทั้งหมด" || z.district === selectedDistrict,
+      )
+      .filter((z) => {
+        if (!q) return true;
+        const vendors = vendorsByZoneId[z.id] ?? [];
+        return (
+          z.name.includes(q) ||
+          z.district.includes(q) ||
+          vendors.some((v) => v.name.includes(q))
+        );
+      });
+  }, [zones, selectedDistrict, searchQuery, vendorsByZoneId]);
 
-  const toggleExpanded = (zoneId: number) => {
+  const mapZonesWithCoords = filteredZones.filter(
+    (z) => typeof z.lat === "number" && typeof z.lng === "number",
+  );
+  const firstZoneWithCoords = mapZonesWithCoords[0];
+  const initialCenter = firstZoneWithCoords
+    ? {
+        latitude: firstZoneWithCoords.lat as number,
+        longitude: firstZoneWithCoords.lng as number,
+      }
+    : { latitude: 13.7563, longitude: 100.5018 };
+
+  const selectedZone = selectedZoneId
+    ? (zones.find((z) => z.id === selectedZoneId) ?? null)
+    : null;
+  const selectedZoneVendors = selectedZone
+    ? (vendorsByZoneId[selectedZone.id] ?? [])
+    : [];
+  const selectedZoneDetailsLoading = selectedZone
+    ? zoneDetailsLoadingById[selectedZone.id] === true
+    : false;
+  const selectedZoneDetailsError = selectedZone
+    ? (zoneDetailsErrorById[selectedZone.id] ?? null)
+    : null;
+
+  const cycleDistrict = () => {
+    setSelectedDistrictIndex((i) => (i + 1) % districtOptions.length);
+  };
+
+  const getTodayRangeIso = () => {
+    const start = new Date();
+    start.setHours(0, 0, 0, 0);
+    const end = new Date(start);
+    end.setDate(start.getDate() + 1);
+    return { startIso: start.toISOString(), endIso: end.toISOString() };
+  };
+
+  const formatTimeHHmm = (value: string | null | undefined) => {
+    if (!value) return undefined;
+    const d = new Date(value);
+    if (Number.isNaN(d.getTime())) return undefined;
+    const hh = String(d.getHours()).padStart(2, "0");
+    const mm = String(d.getMinutes()).padStart(2, "0");
+    return `${hh}:${mm}`;
+  };
+
+  const formatTimeHHmmWithSuffix = (value: string | null | undefined) => {
+    const hhmm = formatTimeHHmm(value);
+    return hhmm ? `${hhmm} น.` : "—";
+  };
+
+  const formatThaiDate = (value: string | null | undefined) => {
+    if (!value) return "";
+    const d = new Date(value);
+    if (Number.isNaN(d.getTime())) return "";
+
+    const months = [
+      "ม.ค.",
+      "ก.พ.",
+      "มี.ค.",
+      "เม.ย.",
+      "พ.ค.",
+      "มิ.ย.",
+      "ก.ค.",
+      "ส.ค.",
+      "ก.ย.",
+      "ต.ค.",
+      "พ.ย.",
+      "ธ.ค.",
+    ];
+
+    const day = d.getDate();
+    const month = months[d.getMonth()] ?? "";
+    const yearBE = d.getFullYear() + 543;
+    return `วันนี้ ${day} ${month} ${String(yearBE).slice(-2)}`;
+  };
+
+  const openStoreSheet = async (params: StoreSheetParams) => {
+    setStoreSheet(params);
+    setStoreLoading(true);
+    setStoreError(null);
+    setStoreContract(null);
+    setStoreCheckin(null);
+    storeSheetTranslateY.value = withSpring(0, springConfig);
+
+    try {
+      const { data: contractData, error: contractError } = await supabase
+        .from("contracts")
+        .select("shop_name, product_type, vendors(first_name, last_name)")
+        .eq("vendor_id", params.vendorId)
+        .eq("zone_id", params.zoneId)
+        .order("created_at", { ascending: false })
+        .limit(1)
+        .maybeSingle();
+
+      if (contractError) throw contractError;
+      setStoreContract(contractData as any);
+
+      const { data: checkinData, error: checkinError } = await supabase
+        .from("daily_checkins")
+        .select("checkin_time, checkout_time, checkin_photo, checkout_photo")
+        .eq("vendor_id", params.vendorId)
+        .order("checkin_time", { ascending: false })
+        .limit(1)
+        .maybeSingle();
+
+      if (checkinError) throw checkinError;
+      setStoreCheckin(checkinData as any);
+    } catch (err: any) {
+      setStoreError(err?.message ?? "โหลดข้อมูลร้านค้าไม่สำเร็จ");
+    } finally {
+      setStoreLoading(false);
+    }
+  };
+
+  const closeStoreSheet = () => {
+    storeSheetTranslateY.value = withSpring(
+      STORE_SHEET_COLLAPSED_Y,
+      springConfig,
+    );
+    setTimeout(() => {
+      setStoreSheet(null);
+      setStoreContract(null);
+      setStoreCheckin(null);
+      setStoreError(null);
+      setStoreLoading(false);
+    }, 200);
+  };
+
+  const openPhotoViewer = (uri: string, label: string) => {
+    if (!uri) return;
+    setPhotoViewer({ uri, label });
+  };
+
+  const ensureZoneDetails = async (zoneId: string) => {
+    if (zoneDetailsLoadingById[zoneId]) return;
+
+    setZoneDetailsLoadingById((prev) => ({ ...prev, [zoneId]: true }));
+    setZoneDetailsErrorById((prev) => ({ ...prev, [zoneId]: null }));
+
+    try {
+      const { startIso, endIso } = getTodayRangeIso();
+
+      const { data: contracts, error: contractsError } = await supabase
+        .from("contracts")
+        .select(
+          "id, vendor_id, shop_name, status, start_date, end_date, vendors(first_name, last_name)",
+        )
+        .eq("zone_id", zoneId);
+
+      if (contractsError) throw contractsError;
+
+      const vendorIds = Array.from(
+        new Set((contracts ?? []).map((c: any) => String(c.vendor_id))),
+      ).filter(Boolean);
+
+      const { data: checkins, error: checkinsError } = vendorIds.length
+        ? await supabase
+            .from("daily_checkins")
+            .select("vendor_id, checkin_time, checkout_time")
+            .in("vendor_id", vendorIds)
+            .gte("checkin_time", startIso)
+            .lt("checkin_time", endIso)
+            .order("checkin_time", { ascending: false })
+        : { data: [], error: null };
+
+      if (checkinsError) throw checkinsError;
+
+      const latestCheckinByVendorId = new Map<
+        string,
+        { checkin_time: string; checkout_time?: string | null }
+      >();
+      for (const ci of checkins ?? []) {
+        const vid = String((ci as any).vendor_id);
+        if (!latestCheckinByVendorId.has(vid)) {
+          latestCheckinByVendorId.set(vid, {
+            checkin_time: (ci as any).checkin_time,
+            checkout_time: (ci as any).checkout_time,
+          });
+        }
+      }
+
+      const { data: inspections, error: inspectionsError } = await supabase
+        .from("inspections")
+        .select("id")
+        .eq("zone_id", zoneId)
+        .gte("created_at", startIso)
+        .lt("created_at", endIso)
+        .limit(1);
+
+      if (inspectionsError) throw inspectionsError;
+
+      const inspectedToday = (inspections?.length ?? 0) > 0;
+
+      const vendors: ZoneVendor[] = (contracts ?? []).map((c: any) => {
+        const vendorId = String(c.vendor_id);
+        const first = c.vendors?.first_name ?? "";
+        const last = c.vendors?.last_name ?? "";
+        const vendorName = `${first} ${last}`.trim();
+
+        const latest = latestCheckinByVendorId.get(vendorId);
+        const checkInTime = formatTimeHHmm(latest?.checkin_time);
+        const checkOutTime = formatTimeHHmm(latest?.checkout_time ?? undefined);
+
+        return {
+          id: vendorId,
+          name:
+            (c.shop_name as string | null | undefined) ||
+            vendorName ||
+            vendorId,
+          checkInTime,
+          checkOutTime,
+          inspected: inspectedToday,
+        };
+      });
+
+      setVendorsByZoneId((prev) => ({ ...prev, [zoneId]: vendors }));
+    } catch (err: any) {
+      const message =
+        err?.message ?? "เกิดข้อผิดพลาดในการโหลดข้อมูลร้านค้าในโซนนี้";
+      setZoneDetailsErrorById((prev) => ({ ...prev, [zoneId]: message }));
+      setVendorsByZoneId((prev) => ({ ...prev, [zoneId]: [] }));
+    } finally {
+      setZoneDetailsLoadingById((prev) => ({ ...prev, [zoneId]: false }));
+    }
+  };
+
+  const toggleExpanded = (zoneId: string) => {
     setExpandedZoneIds((prev) => {
       const next = new Set(prev);
       if (next.has(zoneId)) next.delete(zoneId);
@@ -151,22 +474,95 @@ export default function ZoneMapScreen() {
     });
   };
 
-  const cycleDistrict = () => {
-    setSelectedDistrictIndex((i) => (i + 1) % districtOptions.length);
+  const snapSheetTo = (to: number) => {
+    sheetTranslateY.value = withSpring(to, springConfig);
   };
+
+  const bottomSheetPan = Gesture.Pan()
+    .onBegin(() => {
+      sheetStartY.value = sheetTranslateY.value;
+    })
+    .onUpdate((e) => {
+      const next = sheetStartY.value + e.translationY;
+      sheetTranslateY.value = Math.max(0, Math.min(SHEET_COLLAPSED_Y, next));
+    })
+    .onEnd((e) => {
+      const isSwipingDown = e.velocityY > 600;
+      const isSwipingUp = e.velocityY < -600;
+
+      if (isSwipingDown) {
+        sheetTranslateY.value = withSpring(SHEET_COLLAPSED_Y, springConfig);
+        return;
+      }
+
+      if (isSwipingUp) {
+        sheetTranslateY.value = withSpring(0, springConfig);
+        return;
+      }
+
+      const shouldCollapse = sheetTranslateY.value > SHEET_COLLAPSED_Y / 2;
+      sheetTranslateY.value = withSpring(
+        shouldCollapse ? SHEET_COLLAPSED_Y : 0,
+        springConfig,
+      );
+    });
+
+  const bottomSheetStyle = useAnimatedStyle(() => ({
+    transform: [{ translateY: sheetTranslateY.value }],
+  }));
+
+  const storeSheetPan = Gesture.Pan()
+    .onBegin(() => {
+      storeSheetStartY.value = storeSheetTranslateY.value;
+    })
+    .onUpdate((e) => {
+      const next = storeSheetStartY.value + e.translationY;
+      storeSheetTranslateY.value = Math.max(
+        0,
+        Math.min(STORE_SHEET_COLLAPSED_Y, next),
+      );
+    })
+    .onEnd((e) => {
+      const isSwipingDown = e.velocityY > 700;
+      const isSwipingUp = e.velocityY < -700;
+
+      if (isSwipingDown) {
+        storeSheetTranslateY.value = withSpring(
+          STORE_SHEET_COLLAPSED_Y,
+          springConfig,
+        );
+        return;
+      }
+
+      if (isSwipingUp) {
+        storeSheetTranslateY.value = withSpring(0, springConfig);
+        return;
+      }
+
+      const shouldCollapse = storeSheetTranslateY.value > STORE_SHEET_COLLAPSED_Y / 2;
+      storeSheetTranslateY.value = withSpring(
+        shouldCollapse ? STORE_SHEET_COLLAPSED_Y : 0,
+        springConfig,
+      );
+    });
+
+  const storeSheetStyle = useAnimatedStyle(() => ({
+    transform: [{ translateY: storeSheetTranslateY.value }],
+  }));
 
   const Header = (
     <SafeAreaView
-      style={activeTab === "map" ? styles.overlayTop : styles.listHeader}
+      style={activeTab === "map" ? styles.overlayTop : styles.headerBlock}
     >
       <StatusBar barStyle="dark-content" />
       <View style={styles.headerRow}>
-        <TouchableOpacity
+        <Pressable
           onPress={() => router.back()}
           style={styles.backButton}
+          hitSlop={10}
         >
-          <Ionicons name="arrow-back" size={24} color="#333" />
-        </TouchableOpacity>
+          <Ionicons name="chevron-back" size={28} color="#111827" />
+        </Pressable>
 
         <Text style={styles.headerTitle}>แผนที่โซนค้าขาย</Text>
 
@@ -174,67 +570,83 @@ export default function ZoneMapScreen() {
           <Text style={styles.districtText}>
             เขต{selectedDistrict === "ทั้งหมด" ? "ทั้งหมด" : selectedDistrict}
           </Text>
-          <Ionicons name="chevron-down" size={18} color="#333" />
+          <Ionicons name="chevron-down" size={18} color="#111827" />
         </Pressable>
       </View>
 
-      <View style={styles.searchRow}>
-        <View style={styles.searchBar}>
-          <Feather name="search" size={20} color="#888" />
-          <TextInput
-            style={styles.searchInput}
-            placeholder="ค้นหาเขต / โซน / ร้านค้า..."
-            value={searchQuery}
-            onChangeText={setSearchQuery}
-          />
-        </View>
-        <TouchableOpacity style={styles.filterButton}>
-          <Ionicons name="options-outline" size={24} color="#F79432" />
-        </TouchableOpacity>
-      </View>
-
-      <View style={styles.tabContainer}>
+      <View style={styles.tabPill}>
         <Pressable
           onPress={() => setActiveTab("map")}
-          style={[styles.tab, activeTab === "map" && styles.activeTab]}
+          style={[styles.tabBtn, activeTab === "map" && styles.tabBtnActive]}
         >
           <Ionicons
             name="map-outline"
-            size={18}
+            size={20}
             color={activeTab === "map" ? "#111827" : "#6B7280"}
           />
           <Text
             style={[
               styles.tabText,
-              activeTab === "map" && styles.activeTabText,
+              activeTab === "map" && styles.tabTextActive,
             ]}
           >
-            {" "}
             แผนที่
           </Text>
         </Pressable>
         <Pressable
           onPress={() => setActiveTab("list")}
-          style={[styles.tab, activeTab === "list" && styles.activeTab]}
+          style={[styles.tabBtn, activeTab === "list" && styles.tabBtnActive]}
         >
           <Ionicons
             name="list"
-            size={18}
+            size={20}
             color={activeTab === "list" ? "#111827" : "#6B7280"}
           />
           <Text
             style={[
               styles.tabText,
-              activeTab === "list" && styles.activeTabText,
+              activeTab === "list" && styles.tabTextActive,
             ]}
           >
-            {" "}
             รายการ
           </Text>
         </Pressable>
       </View>
+
+      <View style={styles.searchRow}>
+        <View style={styles.searchBar}>
+          <Feather name="search" size={18} color="#6B7280" />
+          <TextInput
+            style={styles.searchInput}
+            placeholder="ค้นหาโซน/เขต/ร้านค้า..."
+            value={searchQuery}
+            onChangeText={setSearchQuery}
+          />
+        </View>
+      </View>
     </SafeAreaView>
   );
+
+  if (zonesLoading) {
+    return (
+      <View style={styles.center}>
+        <ActivityIndicator size="large" color="#F79432" />
+        <Text style={styles.centerText}>กำลังโหลดข้อมูลโซน...</Text>
+      </View>
+    );
+  }
+
+  if (zonesError) {
+    return (
+      <View style={styles.center}>
+        <Text style={styles.errorTitle}>โหลดข้อมูลไม่สำเร็จ</Text>
+        <Text style={styles.errorText}>{zonesError}</Text>
+        <Pressable onPress={() => router.back()} style={styles.errorBtn}>
+          <Text style={styles.errorBtnText}>ย้อนกลับ</Text>
+        </Pressable>
+      </View>
+    );
+  }
 
   return (
     <View style={styles.container}>
@@ -245,23 +657,34 @@ export default function ZoneMapScreen() {
             style={styles.map}
             showsUserLocation={hasLocationPermission}
             initialRegion={{
-              latitude: 13.723,
-              longitude: 100.529,
+              latitude: initialCenter.latitude,
+              longitude: initialCenter.longitude,
               latitudeDelta: 0.05,
               longitudeDelta: 0.05,
             }}
           >
-            {filteredZones.map((zone) => (
+            {mapZonesWithCoords.map((zone) => (
               <React.Fragment key={zone.id}>
                 <Circle
-                  center={{ latitude: zone.lat, longitude: zone.lng }}
-                  radius={400}
+                  center={{
+                    latitude: zone.lat as number,
+                    longitude: zone.lng as number,
+                  }}
+                  radius={450}
                   fillColor={`${zone.color}33`}
                   strokeColor={zone.color}
                   strokeWidth={2}
                 />
                 <Marker
-                  coordinate={{ latitude: zone.lat, longitude: zone.lng }}
+                  coordinate={{
+                    latitude: zone.lat as number,
+                    longitude: zone.lng as number,
+                  }}
+                  onPress={() => {
+                    setSelectedZoneId(zone.id);
+                    void ensureZoneDetails(zone.id);
+                    snapSheetTo(0);
+                  }}
                 >
                   <View
                     style={[
@@ -278,34 +701,151 @@ export default function ZoneMapScreen() {
 
           {Header}
 
-          <View style={styles.bottomSheet}>
-            <View style={styles.sheetHandle} />
-            <Text style={styles.sheetTitle}>โซนใกล้เคียง</Text>
+          <Animated.View style={[styles.bottomSheet, bottomSheetStyle]}>
+            <GestureDetector gesture={bottomSheetPan}>
+              <Pressable
+                onPress={() =>
+                  snapSheetTo(sheetTranslateY.value > 0 ? 0 : SHEET_COLLAPSED_Y)
+                }
+                style={styles.sheetHandleHit}
+              >
+                <View style={styles.sheetHandle} />
+              </Pressable>
+            </GestureDetector>
 
-            <ScrollView showsVerticalScrollIndicator={false}>
-              {filteredZones.map((zone) => (
-                <TouchableOpacity key={zone.id} style={styles.zoneCard}>
-                  <View
-                    style={[styles.zoneDot, { backgroundColor: zone.color }]}
-                  />
-                  <View style={styles.zoneInfo}>
-                    <Text style={styles.zoneName}>{zone.name}</Text>
-                    <Text style={styles.zoneDistrict}>{zone.district}</Text>
+            {selectedZone ? (
+              <>
+                <View style={styles.sheetTopRow}>
+                  <View style={{ flex: 1 }} />
+                  <Pressable
+                    onPress={() => setSelectedZoneId(null)}
+                    style={styles.sheetClose}
+                    hitSlop={10}
+                  >
+                    <Ionicons name="close" size={20} color="#111827" />
+                  </Pressable>
+                </View>
+
+                <Text style={styles.zoneBigTitle}>{selectedZone.name}</Text>
+
+                <View style={styles.zoneMetaRow}>
+                  <View style={styles.metaItem}>
+                    <Ionicons name="time-outline" size={18} color="#374151" />
+                    <Text style={styles.metaText}>
+                      {selectedZone.timeRange}
+                    </Text>
                   </View>
-                  <Text style={styles.zoneStats}>
-                    {zone.currentShops}/{zone.totalShops} ร้าน
-                  </Text>
-                  <Ionicons name="chevron-forward" size={18} color="#CCC" />
-                </TouchableOpacity>
-              ))}
-              <View style={{ height: 40 }} />
-            </ScrollView>
-          </View>
+                  <View style={styles.metaItem}>
+                    <Ionicons name="person-outline" size={18} color="#374151" />
+                    <Text style={styles.metaText}>
+                      {selectedZoneVendors.filter((v) => !!v.checkInTime)
+                        .length || selectedZone.currentShops}
+                      /{selectedZone.totalShops} ร้านค้า
+                    </Text>
+                  </View>
+                </View>
+
+                <ScrollView showsVerticalScrollIndicator={false}>
+                  {selectedZoneDetailsLoading ? (
+                    <View style={styles.inlineLoadingRow}>
+                      <ActivityIndicator size="small" color="#F79432" />
+                      <Text style={styles.inlineLoadingText}>
+                        กำลังโหลดรายการร้านค้า...
+                      </Text>
+                    </View>
+                  ) : null}
+
+                  {selectedZoneDetailsError ? (
+                    <View style={styles.inlineErrorBox}>
+                      <Text style={styles.inlineErrorText}>
+                        {selectedZoneDetailsError}
+                      </Text>
+                    </View>
+                  ) : null}
+
+                  {!selectedZoneDetailsLoading &&
+                  !selectedZoneDetailsError &&
+                  selectedZoneVendors.length === 0 ? (
+                    <View style={styles.inlineEmptyBox}>
+                      <Text style={styles.inlineEmptyText}>
+                        ไม่พบร้านค้าในโซนนี้
+                      </Text>
+                    </View>
+                  ) : null}
+
+                  {selectedZoneVendors.map((v) => (
+                    <View key={v.id} style={styles.vendorCard}>
+                      <View style={styles.vendorCardLeft}>
+                        <Text style={styles.vendorTitle}>{v.name}</Text>
+                        <Text style={styles.vendorSub}>
+                          เช็คอิน {v.checkInTime ?? "—"}
+                          {v.checkOutTime
+                            ? ` · เช็คเอาท์ ${v.checkOutTime}`
+                            : ""}
+                        </Text>
+                      </View>
+
+                      {v.inspected ? (
+                        <View style={styles.statusChecked}>
+                          <Ionicons
+                            name="checkmark"
+                            size={18}
+                            color="#10B981"
+                          />
+                          <Text style={styles.statusCheckedText}>ตรวจแล้ว</Text>
+                        </View>
+                      ) : (
+                        <Text style={styles.statusPendingText}>ยังไม่ตรวจ</Text>
+                      )}
+                    </View>
+                  ))}
+
+                  <View style={{ height: 20 }} />
+                </ScrollView>
+              </>
+            ) : (
+              <>
+                <Text style={styles.sheetTitle}>โซน</Text>
+                <ScrollView showsVerticalScrollIndicator={false}>
+                  {filteredZones.map((zone) => (
+                    <Pressable
+                      key={zone.id}
+                      style={styles.zoneRow}
+                      onPress={() => {
+                        setSelectedZoneId(zone.id);
+                        void ensureZoneDetails(zone.id);
+                        snapSheetTo(0);
+                      }}
+                    >
+                      <View
+                        style={[
+                          styles.zoneDot,
+                          { backgroundColor: zone.color },
+                        ]}
+                      />
+                      <View style={styles.zoneRowInfo}>
+                        <Text style={styles.zoneRowName}>{zone.name}</Text>
+                        <Text style={styles.zoneRowSub}>{zone.timeRange}</Text>
+                      </View>
+                      <Text style={styles.zoneRowCount}>
+                        {zone.currentShops}/{zone.totalShops}
+                      </Text>
+                      <Ionicons
+                        name="chevron-forward"
+                        size={18}
+                        color="#D1D5DB"
+                      />
+                    </Pressable>
+                  ))}
+                  <View style={{ height: 20 }} />
+                </ScrollView>
+              </>
+            )}
+          </Animated.View>
         </>
       ) : (
         <View style={styles.listRoot}>
           {Header}
-
           <ScrollView
             showsVerticalScrollIndicator={false}
             contentContainerStyle={styles.listContent}
@@ -315,7 +855,11 @@ export default function ZoneMapScreen() {
               return (
                 <View key={zone.id} style={styles.zoneListCard}>
                   <Pressable
-                    onPress={() => toggleExpanded(zone.id)}
+                    onPress={() => {
+                      const willExpand = !expandedZoneIds.has(zone.id);
+                      toggleExpanded(zone.id);
+                      if (willExpand) void ensureZoneDetails(zone.id);
+                    }}
                     style={styles.zoneListHeader}
                   >
                     <Text style={styles.zoneListTitle}>{zone.name}</Text>
@@ -343,56 +887,333 @@ export default function ZoneMapScreen() {
                     </View>
                   </View>
 
-                  {isExpanded && (
+                  {isExpanded ? (
                     <View style={styles.vendorList}>
-                      {zone.vendors.map((v) => (
-                        <View key={v.id} style={styles.vendorRow}>
-                          <View style={styles.vendorText}>
-                            <Text style={styles.vendorName}>{v.name}</Text>
+                      {zoneDetailsLoadingById[zone.id] ? (
+                        <View style={styles.inlineLoadingRow}>
+                          <ActivityIndicator size="small" color="#F79432" />
+                          <Text style={styles.inlineLoadingText}>
+                            กำลังโหลดรายการร้านค้า...
+                          </Text>
+                        </View>
+                      ) : null}
+
+                      {zoneDetailsErrorById[zone.id] ? (
+                        <View style={styles.inlineErrorBox}>
+                          <Text style={styles.inlineErrorText}>
+                            {zoneDetailsErrorById[zone.id]}
+                          </Text>
+                        </View>
+                      ) : null}
+
+                      {!zoneDetailsLoadingById[zone.id] &&
+                      !zoneDetailsErrorById[zone.id] &&
+                      (vendorsByZoneId[zone.id]?.length ?? 0) === 0 ? (
+                        <View style={styles.inlineEmptyBox}>
+                          <Text style={styles.inlineEmptyText}>
+                            ไม่พบร้านค้าในโซนนี้
+                          </Text>
+                        </View>
+                      ) : null}
+
+                      {(vendorsByZoneId[zone.id] ?? []).map((v) => (
+                        <Pressable
+                          key={v.id}
+                          style={styles.vendorCard}
+                          onPress={() =>
+                            void openStoreSheet({
+                              vendorId: v.id,
+                              zoneId: zone.id,
+                              zoneName: zone.name,
+                              shopName: v.name,
+                            })
+                          }
+                        >
+                          <View style={styles.vendorCardLeft}>
+                            <Text style={styles.vendorTitle}>{v.name}</Text>
                             <Text style={styles.vendorSub}>
-                              {v.checkedBy} · เช็คอิน {v.checkInTime}
+                              เช็คอิน {v.checkInTime ?? "—"}
+                              {v.checkOutTime
+                                ? ` · เช็คเอาท์ ${v.checkOutTime}`
+                                : ""}
                             </Text>
                           </View>
-                          <Text style={styles.vendorScore}>{v.score}</Text>
-                        </View>
+
+                          {v.inspected ? (
+                            <View style={styles.statusChecked}>
+                              <Ionicons
+                                name="checkmark"
+                                size={18}
+                                color="#10B981"
+                              />
+                              <Text style={styles.statusCheckedText}>
+                                ตรวจแล้ว
+                              </Text>
+                            </View>
+                          ) : (
+                            <Text style={styles.statusPendingText}>
+                              ยังไม่ตรวจ
+                            </Text>
+                          )}
+                        </Pressable>
                       ))}
                     </View>
-                  )}
+                  ) : null}
                 </View>
               );
             })}
 
             <View style={{ height: 20 }} />
           </ScrollView>
+
+          {storeSheet ? (
+            <>
+              <Pressable
+                style={styles.storeSheetBackdrop}
+                onPress={closeStoreSheet}
+              />
+              <Animated.View
+                style={[styles.storeSheet, storeSheetStyle]}
+              >
+                <GestureDetector gesture={storeSheetPan}>
+                  <Pressable
+                    onPress={() =>
+                      storeSheetTranslateY.value > 0
+                        ? (storeSheetTranslateY.value = withSpring(0, springConfig))
+                        : (storeSheetTranslateY.value = withSpring(
+                            STORE_SHEET_COLLAPSED_Y,
+                            springConfig,
+                          ))
+                    }
+                    style={styles.sheetHandleHit}
+                  >
+                    <View style={styles.sheetHandle} />
+                  </Pressable>
+                </GestureDetector>
+
+                <View style={styles.storeSheetBody}>
+                  <View style={styles.storeSheetTopRow}>
+                    <Pressable
+                      onPress={closeStoreSheet}
+                      style={styles.sheetClose}
+                      hitSlop={10}
+                    >
+                      <Ionicons name="close" size={20} color="#111827" />
+                    </Pressable>
+                  </View>
+
+                  <Text style={styles.storeShopTitle} numberOfLines={1}>
+                    {storeContract?.shop_name?.trim() || storeSheet.shopName}
+                  </Text>
+
+                  <View style={styles.storeSubRow}>
+                    <View style={{ flex: 1 }}>
+                      <Text style={styles.storeZoneLine} numberOfLines={2}>
+                        {storeSheet.zoneName}
+                      </Text>
+                      <Text style={styles.storeIdentityLine}>
+                        {(() => {
+                          const first = storeContract?.vendors?.first_name?.trim() ?? "";
+                          const last = storeContract?.vendors?.last_name?.trim() ?? "";
+                          const vendorName = `${first} ${last}`.trim();
+                          const productType = storeContract?.product_type?.trim() ?? "";
+                          if (vendorName && productType) return `${vendorName} • ${productType}`;
+                          if (vendorName) return vendorName;
+                          if (productType) return productType;
+                          return "—";
+                        })()}
+                      </Text>
+                    </View>
+                    <Text style={styles.storeScoreText}>85</Text>
+                  </View>
+
+                  <View style={styles.storeSectionHeaderRow}>
+                    <Text style={styles.storeSectionTitle}>หลักฐานการเช็คอิน</Text>
+                    <Pressable
+                      style={styles.storeHistoryLink}
+                      hitSlop={10}
+                      onPress={() =>
+                        router.push({
+                          pathname: "/(officer)/checkin-history",
+                          params: {
+                            vendorId: storeSheet.vendorId,
+                            shopName:
+                              storeContract?.shop_name?.trim() ||
+                              storeSheet.shopName,
+                            zoneName: storeSheet.zoneName,
+                          },
+                        })
+                      }
+                    >
+                      <Text style={styles.storeHistoryText}>ประวัติการเช็คอิน</Text>
+                      <Ionicons name="chevron-forward" size={18} color="#111827" />
+                    </Pressable>
+                  </View>
+
+                  <Text style={styles.storeDateText}>
+                    {formatThaiDate(storeCheckin?.checkin_time)}
+                  </Text>
+
+                  {storeLoading ? (
+                    <View style={styles.inlineLoadingRow}>
+                      <ActivityIndicator size="small" color="#F79432" />
+                      <Text style={styles.inlineLoadingText}>กำลังโหลด...</Text>
+                    </View>
+                  ) : storeError ? (
+                    <View style={styles.inlineErrorBox}>
+                      <Text style={styles.inlineErrorText}>{storeError}</Text>
+                    </View>
+                  ) : (
+                    <View style={styles.storePhotoRow}>
+                      <EvidencePhoto
+                        uri={storeCheckin?.checkin_photo ?? ""}
+                        label={`เช็คอิน: ${formatTimeHHmmWithSuffix(
+                          storeCheckin?.checkin_time,
+                        )}`}
+                        onPress={(uri, label) => openPhotoViewer(uri, label)}
+                      />
+                      <EvidencePhoto
+                        uri={storeCheckin?.checkout_photo ?? ""}
+                        label={`เช็คเอาท์: ${formatTimeHHmmWithSuffix(
+                          storeCheckin?.checkout_time,
+                        )}`}
+                        onPress={(uri, label) => openPhotoViewer(uri, label)}
+                      />
+                    </View>
+                  )}
+
+                  <Pressable
+                    onPress={() =>
+                      router.push({
+                        pathname: "/(officer)/inspect",
+                        params: {
+                          vendorId: storeSheet.vendorId,
+                          zoneId: storeSheet.zoneId,
+                          shopName:
+                            storeContract?.shop_name?.trim() || storeSheet.shopName,
+                        },
+                      })
+                    }
+                    style={styles.storeInspectButton}
+                    disabled={storeLoading}
+                  >
+                    <Ionicons name="document-text-outline" size={22} color="white" />
+                    <Text style={styles.storeInspectButtonText}>ตรวจสอบร้านค้า</Text>
+                  </Pressable>
+                </View>
+              </Animated.View>
+            </>
+          ) : null}
         </View>
       )}
+
+      {photoViewer ? (
+        <View style={styles.photoViewerRoot}>
+          <Pressable
+            style={styles.photoViewerBackdrop}
+            onPress={() => setPhotoViewer(null)}
+          />
+          <View style={styles.photoViewerCard}>
+            <Pressable
+              onPress={() => setPhotoViewer(null)}
+              style={styles.photoViewerClose}
+              hitSlop={10}
+            >
+              <Ionicons name="close" size={18} color="#111827" />
+            </Pressable>
+
+            <Image
+              source={{ uri: photoViewer.uri }}
+              style={styles.photoViewerImage}
+              contentFit="contain"
+            />
+            <View style={styles.photoViewerLabel}>
+              <Text style={styles.photoViewerLabelText}>
+                {photoViewer.label}
+              </Text>
+            </View>
+          </View>
+        </View>
+      ) : null}
     </View>
+  );
+}
+
+function EvidencePhoto({
+  uri,
+  label,
+  onPress,
+}: {
+  uri: string;
+  label: string;
+  onPress?: (uri: string, label: string) => void;
+}) {
+  const hasUri = Boolean(uri);
+  return (
+    <Pressable
+      style={styles.storePhotoCard}
+      onPress={hasUri ? () => onPress?.(uri, label) : undefined}
+    >
+      {hasUri ? (
+        <Image source={{ uri }} style={styles.storePhoto} contentFit="cover" />
+      ) : (
+        <View style={[styles.storePhoto, styles.storePhotoPlaceholder]}>
+          <Ionicons name="image-outline" size={24} color="#9CA3AF" />
+          <Text style={styles.storePhotoPlaceholderText}>ไม่มีรูป</Text>
+        </View>
+      )}
+      <View style={styles.storePhotoLabelOverlay}>
+        <Text style={styles.storePhotoLabelText}>{label}</Text>
+      </View>
+    </Pressable>
   );
 }
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: "white" },
   map: { width: "100%", height: "100%" },
+  center: {
+    flex: 1,
+    alignItems: "center",
+    justifyContent: "center",
+    padding: 20,
+  },
+  centerText: {
+    marginTop: 10,
+    fontSize: 14,
+    fontWeight: "700",
+    color: "#374151",
+  },
+  errorTitle: {
+    fontSize: 16,
+    fontWeight: "900",
+    color: "#991B1B",
+    marginBottom: 6,
+  },
+  errorText: { fontSize: 13, color: "#7F1D1D", textAlign: "center" },
+  errorBtn: {
+    marginTop: 14,
+    backgroundColor: "#111827",
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    borderRadius: 10,
+  },
+  errorBtnText: { color: "white", fontWeight: "800" },
 
-  // Header Styles
   overlayTop: {
     position: "absolute",
     top: 0,
     left: 0,
     right: 0,
     backgroundColor: "white",
-    paddingBottom: 15,
+    paddingBottom: 8,
     borderBottomLeftRadius: 20,
     borderBottomRightRadius: 20,
     elevation: 5,
   },
-  listRoot: {
-    flex: 1,
-    backgroundColor: "#F3F4F6",
-  },
-  listHeader: {
+  headerBlock: {
     backgroundColor: "white",
-    paddingBottom: 15,
+    paddingBottom: 8,
     borderBottomLeftRadius: 20,
     borderBottomRightRadius: 20,
     elevation: 2,
@@ -401,11 +1222,17 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
-    paddingHorizontal: 20,
-    marginTop: 10,
+    paddingHorizontal: 18,
+    paddingTop: 6,
   },
-  backButton: { padding: 5 },
-  headerTitle: { fontSize: 18, fontWeight: "bold", color: "#333" },
+  backButton: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  headerTitle: { fontSize: 18, fontWeight: "900", color: "#111827" },
   districtPill: {
     flexDirection: "row",
     alignItems: "center",
@@ -414,62 +1241,49 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: "#E5E7EB",
     borderRadius: 14,
-    paddingHorizontal: 14,
-    height: 42,
-  },
-  districtText: { fontSize: 16, fontWeight: "700", color: "#111827" },
-
-  searchRow: {
-    flexDirection: "row",
-    paddingHorizontal: 20,
-    marginTop: 15,
-    gap: 10,
-  },
-  searchBar: {
-    flex: 1,
-    flexDirection: "row",
-    backgroundColor: "#F2F2F2",
-    borderRadius: 12,
     paddingHorizontal: 12,
-    height: 45,
-    alignItems: "center",
+    height: 36,
   },
-  searchInput: { flex: 1, marginLeft: 10, fontSize: 14 },
-  filterButton: {
-    width: 45,
-    height: 45,
-    backgroundColor: "white",
-    borderRadius: 12,
-    justifyContent: "center",
-    alignItems: "center",
-    borderWidth: 1,
-    borderColor: "#F79432",
-  },
+  districtText: { fontSize: 14, fontWeight: "800", color: "#111827" },
 
-  tabContainer: {
+  tabPill: {
     flexDirection: "row",
-    paddingHorizontal: 20,
-    marginTop: 15,
+    marginTop: 10,
+    marginHorizontal: 18,
+    backgroundColor: "#E9EEF5",
+    borderRadius: 16,
+    padding: 4,
+    gap: 6,
+  },
+  tabBtn: {
+    flex: 1,
+    height: 38,
+    borderRadius: 12,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
     gap: 10,
   },
-  tab: {
-    flex: 1,
-    flexDirection: "row",
-    height: 40,
-    backgroundColor: "#EEF2F7",
-    borderRadius: 10,
-    justifyContent: "center",
-    alignItems: "center",
-  },
-  activeTab: {
+  tabBtnActive: {
     backgroundColor: "white",
     borderWidth: 1,
     borderColor: "#E5E7EB",
   },
-  tabText: { color: "#6B7280", fontWeight: "800" },
-  activeTabText: { color: "#111827" },
+  tabText: { fontSize: 16, fontWeight: "900", color: "#6B7280" },
+  tabTextActive: { color: "#111827" },
 
-  // Marker Styles
+  searchRow: { paddingHorizontal: 18, paddingTop: 8 },
+  searchBar: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
+    backgroundColor: "#F3F4F6",
+    borderRadius: 14,
+    paddingHorizontal: 12,
+    height: 40,
+  },
+  searchInput: { flex: 1, fontSize: 14, color: "#111827" },
+
   customMarker: {
     width: 30,
     height: 30,
@@ -487,17 +1301,16 @@ const styles = StyleSheet.create({
     backgroundColor: "white",
   },
 
-  // Bottom Sheet Styles
   bottomSheet: {
     position: "absolute",
     bottom: 0,
     left: 0,
     right: 0,
-    height: SCREEN_HEIGHT * 0.35,
+    height: SCREEN_HEIGHT * 0.45,
     backgroundColor: "white",
-    borderTopLeftRadius: 30,
-    borderTopRightRadius: 30,
-    paddingHorizontal: 25,
+    borderTopLeftRadius: 26,
+    borderTopRightRadius: 26,
+    paddingHorizontal: 18,
     paddingTop: 10,
     elevation: 20,
     shadowColor: "#000",
@@ -506,34 +1319,127 @@ const styles = StyleSheet.create({
     shadowRadius: 10,
   },
   sheetHandle: {
-    width: 40,
+    width: 44,
     height: 5,
-    backgroundColor: "#EEE",
+    backgroundColor: "#E5E7EB",
     borderRadius: 3,
     alignSelf: "center",
-    marginBottom: 15,
-  },
-  sheetTitle: { fontSize: 18, fontWeight: "bold", marginBottom: 15 },
-  zoneCard: {
-    flexDirection: "row",
-    alignItems: "center",
-    backgroundColor: "#F8F8F8",
-    padding: 15,
-    borderRadius: 15,
     marginBottom: 10,
   },
-  zoneDot: { width: 12, height: 12, borderRadius: 6, marginRight: 15 },
-  zoneInfo: { flex: 1 },
-  zoneName: { fontSize: 16, fontWeight: "bold" },
-  zoneDistrict: { fontSize: 12, color: "#888" },
-  zoneStats: { fontSize: 12, color: "#666", marginRight: 10 },
-
-  // List Tab
-  listContent: {
-    paddingHorizontal: 20,
-    paddingTop: 16,
-    paddingBottom: 20,
+  sheetHandleHit: {
+    paddingTop: 2,
+    paddingBottom: 8,
   },
+  sheetTopRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    marginBottom: 8,
+  },
+  sheetClose: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: "#F3F4F6",
+  },
+  sheetTitle: {
+    fontSize: 18,
+    fontWeight: "900",
+    color: "#111827",
+    marginBottom: 10,
+  },
+
+  zoneRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "#F9FAFB",
+    borderRadius: 16,
+    padding: 14,
+    marginBottom: 10,
+  },
+  zoneDot: { width: 10, height: 10, borderRadius: 5, marginRight: 12 },
+  zoneRowInfo: { flex: 1 },
+  zoneRowName: { fontSize: 16, fontWeight: "900", color: "#111827" },
+  zoneRowSub: { fontSize: 12, color: "#6B7280", marginTop: 2 },
+  zoneRowCount: {
+    fontSize: 14,
+    fontWeight: "900",
+    color: "#111827",
+    marginRight: 10,
+  },
+
+  zoneBigTitle: {
+    fontSize: 22,
+    fontWeight: "900",
+    color: "#111827",
+    marginBottom: 10,
+  },
+  zoneMetaRow: { flexDirection: "row", gap: 16, marginBottom: 14 },
+  metaItem: { flexDirection: "row", alignItems: "center", gap: 8 },
+  metaText: { fontSize: 16, fontWeight: "800", color: "#374151" },
+
+  inlineLoadingRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
+    paddingVertical: 10,
+    paddingHorizontal: 6,
+  },
+  inlineLoadingText: { fontSize: 14, fontWeight: "800", color: "#374151" },
+  inlineErrorBox: {
+    backgroundColor: "#FEF2F2",
+    borderRadius: 12,
+    padding: 10,
+    marginBottom: 10,
+    borderWidth: 1,
+    borderColor: "#FCA5A5",
+  },
+  inlineErrorText: { fontSize: 13, fontWeight: "800", color: "#991B1B" },
+  inlineEmptyBox: {
+    backgroundColor: "#F9FAFB",
+    borderRadius: 12,
+    padding: 10,
+    marginBottom: 10,
+    borderWidth: 1,
+    borderColor: "#E5E7EB",
+  },
+  inlineEmptyText: { fontSize: 13, fontWeight: "800", color: "#6B7280" },
+
+  vendorCard: {
+    backgroundColor: "white",
+    borderRadius: 16,
+    padding: 16,
+    marginBottom: 12,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.06,
+    shadowRadius: 14,
+    elevation: 3,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+  },
+  vendorCardLeft: { flex: 1, paddingRight: 12 },
+  vendorTitle: {
+    fontSize: 22,
+    fontWeight: "900",
+    color: "#111827",
+    marginBottom: 4,
+  },
+  vendorSub: {
+    fontSize: 16,
+    fontWeight: "700",
+    color: "#374151",
+    opacity: 0.9,
+  },
+  statusChecked: { flexDirection: "row", alignItems: "center", gap: 6 },
+  statusCheckedText: { fontSize: 18, fontWeight: "900", color: "#10B981" },
+  statusPendingText: { fontSize: 18, fontWeight: "900", color: "#64748B" },
+
+  listRoot: { flex: 1, backgroundColor: "#F3F4F6" },
+  listContent: { paddingHorizontal: 18, paddingTop: 16, paddingBottom: 20 },
   zoneListCard: {
     backgroundColor: "white",
     borderRadius: 16,
@@ -557,53 +1463,174 @@ const styles = StyleSheet.create({
     fontWeight: "900",
     color: "#111827",
   },
-  zoneMetaRow: {
-    flexDirection: "row",
-    gap: 16,
-    paddingHorizontal: 16,
-    paddingBottom: 14,
-  },
-  metaItem: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 8,
-  },
-  metaText: {
-    fontSize: 16,
-    fontWeight: "700",
-    color: "#374151",
-  },
   vendorList: {
     borderTopWidth: 1,
     borderTopColor: "#E5E7EB",
+    paddingTop: 12,
+    paddingHorizontal: 12,
+    paddingBottom: 6,
   },
-  vendorRow: {
+
+  storeSheetBackdrop: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: "rgba(17,24,39,0.35)",
+  },
+  storeSheet: {
+    position: "absolute",
+    left: 0,
+    right: 0,
+    bottom: 0,
+    height: SCREEN_HEIGHT * 0.72,
+    backgroundColor: "white",
+    borderTopLeftRadius: 26,
+    borderTopRightRadius: 26,
+    paddingTop: 10,
+    elevation: 30,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: -6 },
+    shadowOpacity: 0.12,
+    shadowRadius: 16,
+  },
+  storeSheetBody: {
+    flex: 1,
+    paddingHorizontal: 18,
+    paddingBottom: 18,
+  },
+  storeSheetTopRow: {
+    flexDirection: "row",
+    justifyContent: "flex-end",
+    marginBottom: 4,
+  },
+  storeShopTitle: {
+    fontSize: 34,
+    fontWeight: "900",
+    color: "#111827",
+    marginBottom: 10,
+  },
+  storeSubRow: {
+    flexDirection: "row",
+    alignItems: "flex-start",
+    justifyContent: "space-between",
+    marginBottom: 14,
+  },
+  storeZoneLine: {
+    fontSize: 18,
+    fontWeight: "900",
+    color: "#111827",
+    marginBottom: 4,
+  },
+  storeIdentityLine: { fontSize: 15, fontWeight: "800", color: "#374151" },
+  storeScoreText: {
+    fontSize: 54,
+    fontWeight: "900",
+    color: "#10B981",
+    marginLeft: 12,
+    lineHeight: 54,
+  },
+  storeSectionHeaderRow: {
+    paddingTop: 14,
+    borderTopWidth: 1,
+    borderTopColor: "#E5E7EB",
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
-    paddingHorizontal: 16,
-    paddingVertical: 14,
-    borderTopWidth: 1,
-    borderTopColor: "#EEF2F7",
   },
-  vendorText: { flex: 1, paddingRight: 12 },
-  vendorName: {
-    fontSize: 22,
+  storeSectionTitle: { fontSize: 18, fontWeight: "900", color: "#111827" },
+  storeHistoryLink: { flexDirection: "row", alignItems: "center", gap: 6 },
+  storeHistoryText: { fontSize: 15, fontWeight: "900", color: "#111827" },
+  storeDateText: {
+    marginTop: 10,
+    fontSize: 16,
     fontWeight: "900",
     color: "#111827",
-    marginBottom: 2,
   },
-  vendorSub: {
-    fontSize: 16,
-    fontWeight: "700",
-    color: "#374151",
-    opacity: 0.9,
+  storePhotoRow: { flexDirection: "row", gap: 12, marginTop: 12 },
+  storePhotoCard: { flex: 1, borderRadius: 18, overflow: "hidden" },
+  storePhoto: { width: "100%", height: 160, borderRadius: 18 },
+  storePhotoPlaceholder: {
+    backgroundColor: "#F3F4F6",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 6,
   },
-  vendorScore: {
-    fontSize: 28,
+  storePhotoPlaceholderText: { fontSize: 12, fontWeight: "800", color: "#9CA3AF" },
+  storePhotoLabelOverlay: {
+    position: "absolute",
+    left: 12,
+    right: 12,
+    bottom: 10,
+    backgroundColor: "rgba(0,0,0,0.55)",
+    paddingVertical: 8,
+    paddingHorizontal: 10,
+    borderRadius: 12,
+  },
+  storePhotoLabelText: {
+    color: "white",
+    fontSize: 14,
     fontWeight: "900",
-    color: "#10B981",
-    minWidth: 48,
-    textAlign: "right",
+    textAlign: "center",
+  },
+  storeInspectButton: {
+    marginTop: 16,
+    backgroundColor: "#64748B",
+    borderRadius: 16,
+    paddingVertical: 16,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 10,
+  },
+  storeInspectButtonText: { color: "white", fontSize: 18, fontWeight: "900" },
+
+  photoViewerRoot: {
+    ...StyleSheet.absoluteFillObject,
+    zIndex: 999,
+    elevation: 999,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  photoViewerBackdrop: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: "rgba(0,0,0,0.65)",
+  },
+  photoViewerCard: {
+    width: "90%",
+    height: SCREEN_HEIGHT * 0.72,
+    borderRadius: 22,
+    overflow: "hidden",
+    backgroundColor: "#111827",
+  },
+  photoViewerClose: {
+    position: "absolute",
+    top: 14,
+    right: 14,
+    zIndex: 2,
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: "rgba(255,255,255,0.9)",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  photoViewerImage: {
+    width: "100%",
+    height: "100%",
+    backgroundColor: "#111827",
+  },
+  photoViewerLabel: {
+    position: "absolute",
+    left: 14,
+    right: 14,
+    bottom: 14,
+    backgroundColor: "rgba(0,0,0,0.55)",
+    paddingVertical: 10,
+    paddingHorizontal: 12,
+    borderRadius: 14,
+  },
+  photoViewerLabelText: {
+    color: "white",
+    fontSize: 18,
+    fontWeight: "900",
+    textAlign: "center",
   },
 });
