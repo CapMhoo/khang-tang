@@ -1,5 +1,5 @@
 import { Ionicons } from "@expo/vector-icons";
-import { useRouter } from "expo-router";
+import { useLocalSearchParams, useRouter } from "expo-router";
 import React from "react";
 import {
   Pressable,
@@ -12,6 +12,11 @@ import {
 
 export default function OfficerInspectScreen() {
   const router = useRouter();
+  const params = useLocalSearchParams<{
+    vendorId?: string;
+    zoneId?: string;
+    shopName?: string;
+  }>();
 
   return (
     <SafeAreaView style={styles.container}>
@@ -31,7 +36,15 @@ export default function OfficerInspectScreen() {
 
       <View style={styles.card}>
         <Text style={styles.title}>Inspection Page</Text>
-        <Text style={styles.subtitle}>placeholder</Text>
+        <Text style={styles.subtitle}>
+          vendorId: {params.vendorId ?? "-"}
+        </Text>
+        <Text style={styles.subtitle}>
+          zoneId: {params.zoneId ?? "-"}
+        </Text>
+        <Text style={styles.subtitle}>
+          shopName: {params.shopName ?? "-"}
+        </Text>
       </View>
     </SafeAreaView>
   );
