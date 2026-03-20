@@ -96,7 +96,9 @@ export default function OfficerCheckinHistoryScreen() {
       try {
         const { data, error: fetchError } = await supabase
           .from("daily_checkins")
-          .select("id, checkin_time, checkout_time, checkin_photo, checkout_photo")
+          .select(
+            "id, checkin_time, checkout_time, checkin_photo, checkout_photo",
+          )
           .eq("vendor_id", vendorId)
           .order("checkin_time", { ascending: false })
           .limit(30);
@@ -136,7 +138,11 @@ export default function OfficerCheckinHistoryScreen() {
       <StatusBar barStyle="dark-content" />
 
       <View style={styles.headerRow}>
-        <Pressable onPress={() => router.back()} style={styles.backButton} hitSlop={10}>
+        <Pressable
+          onPress={() => router.back()}
+          style={styles.backButton}
+          hitSlop={10}
+        >
           <Ionicons name="chevron-back" size={28} color="#111827" />
         </Pressable>
         <Text style={styles.headerTitle}>ประวัติการเช็คอิน</Text>
@@ -154,11 +160,18 @@ export default function OfficerCheckinHistoryScreen() {
           <Text style={styles.errorText}>{error}</Text>
         </View>
       ) : (
-        <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.content}>
+        <ScrollView
+          showsVerticalScrollIndicator={false}
+          contentContainerStyle={styles.content}
+        >
           <View style={styles.vendorCard}>
             <View style={styles.vendorThumb}>
               {latestThumb ? (
-                <Image source={{ uri: latestThumb }} style={styles.thumbImage} contentFit="cover" />
+                <Image
+                  source={{ uri: latestThumb }}
+                  style={styles.thumbImage}
+                  contentFit="cover"
+                />
               ) : (
                 <View style={[styles.thumbImage, styles.thumbPlaceholder]}>
                   <Ionicons name="image-outline" size={22} color="#9CA3AF" />
@@ -187,9 +200,18 @@ export default function OfficerCheckinHistoryScreen() {
                 <View key={row.id} style={styles.dayCard}>
                   <Pressable
                     style={styles.photoCard}
-                    onPress={() => setPhotoViewer({ uri: row.checkin_photo, label: `เช็คอิน: ${formatTimeHHmm(row.checkin_time)}` })}
+                    onPress={() =>
+                      setPhotoViewer({
+                        uri: row.checkin_photo,
+                        label: `เช็คอิน: ${formatTimeHHmm(row.checkin_time)}`,
+                      })
+                    }
                   >
-                    <Image source={{ uri: row.checkin_photo }} style={styles.photo} contentFit="cover" />
+                    <Image
+                      source={{ uri: row.checkin_photo }}
+                      style={styles.photo}
+                      contentFit="cover"
+                    />
                     <View style={styles.photoLabelOverlay}>
                       <Text style={styles.photoLabelText}>
                         เช็คอิน: {formatTimeHHmm(row.checkin_time)}
@@ -201,16 +223,29 @@ export default function OfficerCheckinHistoryScreen() {
                     disabled={!row.checkout_photo}
                     onPress={() =>
                       row.checkout_photo
-                        ? setPhotoViewer({ uri: row.checkout_photo, label: `เช็คเอาท์: ${formatTimeHHmm(row.checkout_time)}` })
+                        ? setPhotoViewer({
+                            uri: row.checkout_photo,
+                            label: `เช็คเอาท์: ${formatTimeHHmm(row.checkout_time)}`,
+                          })
                         : null
                     }
                   >
                     {row.checkout_photo ? (
-                      <Image source={{ uri: row.checkout_photo }} style={styles.photo} contentFit="cover" />
+                      <Image
+                        source={{ uri: row.checkout_photo }}
+                        style={styles.photo}
+                        contentFit="cover"
+                      />
                     ) : (
                       <View style={[styles.photo, styles.photoPlaceholder]}>
-                        <Ionicons name="image-outline" size={24} color="#9CA3AF" />
-                        <Text style={styles.photoPlaceholderText}>ไม่มีรูป</Text>
+                        <Ionicons
+                          name="image-outline"
+                          size={24}
+                          color="#9CA3AF"
+                        />
+                        <Text style={styles.photoPlaceholderText}>
+                          ไม่มีรูป
+                        </Text>
                       </View>
                     )}
                     <View style={styles.photoLabelOverlay}>
@@ -248,7 +283,9 @@ export default function OfficerCheckinHistoryScreen() {
               contentFit="contain"
             />
             <View style={styles.photoViewerLabel}>
-              <Text style={styles.photoViewerLabelText}>{photoViewer.label}</Text>
+              <Text style={styles.photoViewerLabelText}>
+                {photoViewer.label}
+              </Text>
             </View>
           </View>
         </View>
@@ -278,9 +315,24 @@ const styles = StyleSheet.create({
   headerTitle: { fontSize: 22, fontWeight: "900", color: "#111827" },
   headerRight: { width: 36, height: 36 },
 
-  center: { flex: 1, alignItems: "center", justifyContent: "center", padding: 20 },
-  centerText: { marginTop: 10, fontSize: 14, fontWeight: "700", color: "#374151" },
-  errorTitle: { fontSize: 16, fontWeight: "900", color: "#991B1B", marginBottom: 6 },
+  center: {
+    flex: 1,
+    alignItems: "center",
+    justifyContent: "center",
+    padding: 20,
+  },
+  centerText: {
+    marginTop: 10,
+    fontSize: 14,
+    fontWeight: "700",
+    color: "#374151",
+  },
+  errorTitle: {
+    fontSize: 16,
+    fontWeight: "900",
+    color: "#991B1B",
+    marginBottom: 6,
+  },
   errorText: { fontSize: 13, color: "#7F1D1D", textAlign: "center" },
 
   content: { paddingHorizontal: 18, paddingTop: 16, paddingBottom: 20 },
@@ -300,13 +352,33 @@ const styles = StyleSheet.create({
   },
   vendorThumb: { width: 72, height: 72, borderRadius: 18, overflow: "hidden" },
   thumbImage: { width: "100%", height: "100%" },
-  thumbPlaceholder: { backgroundColor: "#F3F4F6", alignItems: "center", justifyContent: "center" },
+  thumbPlaceholder: {
+    backgroundColor: "#F3F4F6",
+    alignItems: "center",
+    justifyContent: "center",
+  },
   vendorTitle: { fontSize: 26, fontWeight: "900", color: "#111827" },
-  vendorSubRow: { flexDirection: "row", alignItems: "center", gap: 8, marginTop: 6 },
-  vendorSubText: { fontSize: 16, fontWeight: "800", color: "#111827", opacity: 0.9, flex: 1 },
+  vendorSubRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    marginTop: 6,
+  },
+  vendorSubText: {
+    fontSize: 16,
+    fontWeight: "800",
+    color: "#111827",
+    opacity: 0.9,
+    flex: 1,
+  },
 
   dayBlock: { marginTop: 6, marginBottom: 14 },
-  dayTitle: { fontSize: 24, fontWeight: "900", color: "#111827", marginBottom: 10 },
+  dayTitle: {
+    fontSize: 24,
+    fontWeight: "900",
+    color: "#111827",
+    marginBottom: 10,
+  },
   dayCard: {
     backgroundColor: "white",
     borderRadius: 18,
@@ -322,7 +394,12 @@ const styles = StyleSheet.create({
   },
   photoCard: { flex: 1, borderRadius: 16, overflow: "hidden" },
   photo: { width: "100%", height: 150 },
-  photoPlaceholder: { backgroundColor: "#F3F4F6", alignItems: "center", justifyContent: "center", gap: 6 },
+  photoPlaceholder: {
+    backgroundColor: "#F3F4F6",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 6,
+  },
   photoPlaceholderText: { fontSize: 12, fontWeight: "800", color: "#9CA3AF" },
   photoLabelOverlay: {
     position: "absolute",
@@ -334,7 +411,12 @@ const styles = StyleSheet.create({
     paddingHorizontal: 10,
     borderRadius: 12,
   },
-  photoLabelText: { color: "white", fontSize: 16, fontWeight: "900", textAlign: "center" },
+  photoLabelText: {
+    color: "white",
+    fontSize: 16,
+    fontWeight: "900",
+    textAlign: "center",
+  },
 
   photoViewerRoot: {
     ...StyleSheet.absoluteFillObject,
@@ -366,7 +448,11 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
   },
-  photoViewerImage: { width: "100%", height: "100%", backgroundColor: "#111827" },
+  photoViewerImage: {
+    width: "100%",
+    height: "100%",
+    backgroundColor: "#111827",
+  },
   photoViewerLabel: {
     position: "absolute",
     left: 14,
