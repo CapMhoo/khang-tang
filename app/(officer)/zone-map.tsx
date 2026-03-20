@@ -1,4 +1,4 @@
-import { Feather, Ionicons } from "@expo/vector-icons";
+import { Ionicons } from "@expo/vector-icons";
 import { Image } from "expo-image";
 import * as Location from "expo-location";
 import { useRouter } from "expo-router";
@@ -12,7 +12,6 @@ import {
   StatusBar,
   StyleSheet,
   Text,
-  TextInput,
   View,
 } from "react-native";
 import { Gesture, GestureDetector } from "react-native-gesture-handler";
@@ -85,7 +84,6 @@ export default function ZoneMapScreen() {
   >({});
 
   const [activeTab, setActiveTab] = useState<"map" | "list">("map");
-  const [searchQuery, setSearchQuery] = useState("");
   const [selectedDistrictIndex, setSelectedDistrictIndex] = useState(0);
   const [expandedZoneIds, setExpandedZoneIds] = useState<Set<string>>(
     () => new Set(),
@@ -140,7 +138,7 @@ export default function ZoneMapScreen() {
       const { data, error } = await supabase
         .from("zones")
         .select(
-          "id, district_name, lat, lon, max_vendor, occupied, time_start, time_end",
+          "id, district_name, lat, lon, max_vendor, time_start, time_end",
         );
 
       if (!isMounted) return;
@@ -158,6 +156,7 @@ export default function ZoneMapScreen() {
         const { data: contracts, error: contractsError } = await supabase
           .from("contracts")
           .select("zone_id")
+          .eq("status", "active")
           .in("zone_id", zoneIds)
           .limit(10000);
 
@@ -178,9 +177,8 @@ export default function ZoneMapScreen() {
 
       const formatted: Zone[] = (data || []).map((z: any) => {
         const total = Number(z.max_vendor ?? 0) || 0;
-        const occupied = Number(z.occupied ?? 0) || 0;
         const contractCount = contractsCountByZoneId.get(String(z.id)) ?? 0;
-        const current = Math.max(occupied, contractCount);
+        const current = contractCount;
 
         const color =
           total > 0 && current >= total
@@ -222,22 +220,12 @@ export default function ZoneMapScreen() {
     districtOptions[selectedDistrictIndex] ?? districtOptions[0];
 
   const filteredZones = useMemo(() => {
-    const q = searchQuery.trim();
     return zones
       .filter(
         (z) =>
           selectedDistrict === "ทั้งหมด" || z.district === selectedDistrict,
-      )
-      .filter((z) => {
-        if (!q) return true;
-        const vendors = vendorsByZoneId[z.id] ?? [];
-        return (
-          z.name.includes(q) ||
-          z.district.includes(q) ||
-          vendors.some((v) => v.name.includes(q))
-        );
-      });
-  }, [zones, selectedDistrict, searchQuery, vendorsByZoneId]);
+      );
+  }, [zones, selectedDistrict]);
 
   const mapZonesWithCoords = filteredZones.filter(
     (z) => typeof z.lat === "number" && typeof z.lng === "number",
@@ -329,6 +317,7 @@ export default function ZoneMapScreen() {
         .select("shop_name, product_type, vendors(first_name, last_name)")
         .eq("vendor_id", params.vendorId)
         .eq("zone_id", params.zoneId)
+        .eq("status", "active")
         .order("created_at", { ascending: false })
         .limit(1)
         .maybeSingle();
@@ -381,17 +370,19 @@ export default function ZoneMapScreen() {
     try {
       const { startIso, endIso } = getTodayRangeIso();
 
-      const { data: contracts, error: contractsError } = await supabase
-        .from("contracts")
-        .select(
-          "id, vendor_id, shop_name, status, start_date, end_date, vendors(first_name, last_name)",
-        )
-        .eq("zone_id", zoneId);
+      const { data: activeContracts, error: activeContractsError } =
+        await supabase
+          .from("contracts")
+          .select(
+            "id, vendor_id, shop_name, status, start_date, end_date, vendors(first_name, last_name)",
+          )
+          .eq("zone_id", zoneId)
+          .eq("status", "active");
 
-      if (contractsError) throw contractsError;
+      if (activeContractsError) throw activeContractsError;
 
       const vendorIds = Array.from(
-        new Set((contracts ?? []).map((c: any) => String(c.vendor_id))),
+        new Set((activeContracts ?? []).map((c: any) => String(c.vendor_id))),
       ).filter(Boolean);
 
       const { data: checkins, error: checkinsError } = vendorIds.length
@@ -432,7 +423,7 @@ export default function ZoneMapScreen() {
 
       const inspectedToday = (inspections?.length ?? 0) > 0;
 
-      const vendors: ZoneVendor[] = (contracts ?? []).map((c: any) => {
+      const vendors: ZoneVendor[] = (activeContracts ?? []).map((c: any) => {
         const vendorId = String(c.vendor_id);
         const first = c.vendors?.first_name ?? "";
         const last = c.vendors?.last_name ?? "";
@@ -613,17 +604,6 @@ export default function ZoneMapScreen() {
         </Pressable>
       </View>
 
-      <View style={styles.searchRow}>
-        <View style={styles.searchBar}>
-          <Feather name="search" size={18} color="#6B7280" />
-          <TextInput
-            style={styles.searchInput}
-            placeholder="ค้นหาโซน/เขต/ร้านค้า..."
-            value={searchQuery}
-            onChangeText={setSearchQuery}
-          />
-        </View>
-      </View>
     </SafeAreaView>
   );
 
@@ -774,7 +754,18 @@ export default function ZoneMapScreen() {
                   ) : null}
 
                   {selectedZoneVendors.map((v) => (
-                    <View key={v.id} style={styles.vendorCard}>
+                    <Pressable
+                      key={v.id}
+                      style={styles.vendorCard}
+                      onPress={() =>
+                        void openStoreSheet({
+                          vendorId: v.id,
+                          zoneId: selectedZone.id,
+                          zoneName: selectedZone.name,
+                          shopName: v.name,
+                        })
+                      }
+                    >
                       <View style={styles.vendorCardLeft}>
                         <Text style={styles.vendorTitle}>{v.name}</Text>
                         <Text style={styles.vendorSub}>
@@ -797,7 +788,7 @@ export default function ZoneMapScreen() {
                       ) : (
                         <Text style={styles.statusPendingText}>ยังไม่ตรวจ</Text>
                       )}
-                    </View>
+                    </Pressable>
                   ))}
 
                   <View style={{ height: 20 }} />
@@ -965,147 +956,158 @@ export default function ZoneMapScreen() {
 
             <View style={{ height: 20 }} />
           </ScrollView>
-
-          {storeSheet ? (
-            <>
-              <Pressable
-                style={styles.storeSheetBackdrop}
-                onPress={closeStoreSheet}
-              />
-              <Animated.View
-                style={[styles.storeSheet, storeSheetStyle]}
-              >
-                <GestureDetector gesture={storeSheetPan}>
-                  <Pressable
-                    onPress={() =>
-                      storeSheetTranslateY.value > 0
-                        ? (storeSheetTranslateY.value = withSpring(0, springConfig))
-                        : (storeSheetTranslateY.value = withSpring(
-                            STORE_SHEET_COLLAPSED_Y,
-                            springConfig,
-                          ))
-                    }
-                    style={styles.sheetHandleHit}
-                  >
-                    <View style={styles.sheetHandle} />
-                  </Pressable>
-                </GestureDetector>
-
-                <View style={styles.storeSheetBody}>
-                  <View style={styles.storeSheetTopRow}>
-                    <Pressable
-                      onPress={closeStoreSheet}
-                      style={styles.sheetClose}
-                      hitSlop={10}
-                    >
-                      <Ionicons name="close" size={20} color="#111827" />
-                    </Pressable>
-                  </View>
-
-                  <Text style={styles.storeShopTitle} numberOfLines={1}>
-                    {storeContract?.shop_name?.trim() || storeSheet.shopName}
-                  </Text>
-
-                  <View style={styles.storeSubRow}>
-                    <View style={{ flex: 1 }}>
-                      <Text style={styles.storeZoneLine} numberOfLines={2}>
-                        {storeSheet.zoneName}
-                      </Text>
-                      <Text style={styles.storeIdentityLine}>
-                        {(() => {
-                          const first = storeContract?.vendors?.first_name?.trim() ?? "";
-                          const last = storeContract?.vendors?.last_name?.trim() ?? "";
-                          const vendorName = `${first} ${last}`.trim();
-                          const productType = storeContract?.product_type?.trim() ?? "";
-                          if (vendorName && productType) return `${vendorName} • ${productType}`;
-                          if (vendorName) return vendorName;
-                          if (productType) return productType;
-                          return "—";
-                        })()}
-                      </Text>
-                    </View>
-                    <Text style={styles.storeScoreText}>85</Text>
-                  </View>
-
-                  <View style={styles.storeSectionHeaderRow}>
-                    <Text style={styles.storeSectionTitle}>หลักฐานการเช็คอิน</Text>
-                    <Pressable
-                      style={styles.storeHistoryLink}
-                      hitSlop={10}
-                      onPress={() =>
-                        router.push({
-                          pathname: "/(officer)/checkin-history",
-                          params: {
-                            vendorId: storeSheet.vendorId,
-                            shopName:
-                              storeContract?.shop_name?.trim() ||
-                              storeSheet.shopName,
-                            zoneName: storeSheet.zoneName,
-                          },
-                        })
-                      }
-                    >
-                      <Text style={styles.storeHistoryText}>ประวัติการเช็คอิน</Text>
-                      <Ionicons name="chevron-forward" size={18} color="#111827" />
-                    </Pressable>
-                  </View>
-
-                  <Text style={styles.storeDateText}>
-                    {formatThaiDate(storeCheckin?.checkin_time)}
-                  </Text>
-
-                  {storeLoading ? (
-                    <View style={styles.inlineLoadingRow}>
-                      <ActivityIndicator size="small" color="#F79432" />
-                      <Text style={styles.inlineLoadingText}>กำลังโหลด...</Text>
-                    </View>
-                  ) : storeError ? (
-                    <View style={styles.inlineErrorBox}>
-                      <Text style={styles.inlineErrorText}>{storeError}</Text>
-                    </View>
-                  ) : (
-                    <View style={styles.storePhotoRow}>
-                      <EvidencePhoto
-                        uri={storeCheckin?.checkin_photo ?? ""}
-                        label={`เช็คอิน: ${formatTimeHHmmWithSuffix(
-                          storeCheckin?.checkin_time,
-                        )}`}
-                        onPress={(uri, label) => openPhotoViewer(uri, label)}
-                      />
-                      <EvidencePhoto
-                        uri={storeCheckin?.checkout_photo ?? ""}
-                        label={`เช็คเอาท์: ${formatTimeHHmmWithSuffix(
-                          storeCheckin?.checkout_time,
-                        )}`}
-                        onPress={(uri, label) => openPhotoViewer(uri, label)}
-                      />
-                    </View>
-                  )}
-
-                  <Pressable
-                    onPress={() =>
-                      router.push({
-                        pathname: "/(officer)/inspect",
-                        params: {
-                          vendorId: storeSheet.vendorId,
-                          zoneId: storeSheet.zoneId,
-                          shopName:
-                            storeContract?.shop_name?.trim() || storeSheet.shopName,
-                        },
-                      })
-                    }
-                    style={styles.storeInspectButton}
-                    disabled={storeLoading}
-                  >
-                    <Ionicons name="document-text-outline" size={22} color="white" />
-                    <Text style={styles.storeInspectButtonText}>ตรวจสอบร้านค้า</Text>
-                  </Pressable>
-                </View>
-              </Animated.View>
-            </>
-          ) : null}
         </View>
       )}
+
+      {storeSheet ? (
+        <>
+          <Pressable
+            style={styles.storeSheetBackdrop}
+            onPress={closeStoreSheet}
+          />
+          <Animated.View style={[styles.storeSheet, storeSheetStyle]}>
+            <GestureDetector gesture={storeSheetPan}>
+              <Pressable
+                onPress={() =>
+                  storeSheetTranslateY.value > 0
+                    ? (storeSheetTranslateY.value = withSpring(0, springConfig))
+                    : (storeSheetTranslateY.value = withSpring(
+                        STORE_SHEET_COLLAPSED_Y,
+                        springConfig,
+                      ))
+                }
+                style={styles.sheetHandleHit}
+              >
+                <View style={styles.sheetHandle} />
+              </Pressable>
+            </GestureDetector>
+
+            <View style={styles.storeSheetBody}>
+              <View style={styles.storeSheetTopRow}>
+                <Pressable
+                  onPress={closeStoreSheet}
+                  style={styles.sheetClose}
+                  hitSlop={10}
+                >
+                  <Ionicons name="close" size={20} color="#111827" />
+                </Pressable>
+              </View>
+
+              <Text style={styles.storeShopTitle} numberOfLines={1}>
+                {storeContract?.shop_name?.trim() || storeSheet.shopName}
+              </Text>
+
+              <View style={styles.storeSubRow}>
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.storeZoneLine} numberOfLines={2}>
+                    {storeSheet.zoneName}
+                  </Text>
+                  <Text style={styles.storeIdentityLine}>
+                    {(() => {
+                      const first =
+                        storeContract?.vendors?.first_name?.trim() ?? "";
+                      const last =
+                        storeContract?.vendors?.last_name?.trim() ?? "";
+                      const vendorName = `${first} ${last}`.trim();
+                      const productType =
+                        storeContract?.product_type?.trim() ?? "";
+                      if (vendorName && productType)
+                        return `${vendorName} • ${productType}`;
+                      if (vendorName) return vendorName;
+                      if (productType) return productType;
+                      return "—";
+                    })()}
+                  </Text>
+                </View>
+                <Text style={styles.storeScoreText}>85</Text>
+              </View>
+
+              <View style={styles.storeSectionHeaderRow}>
+                <Text style={styles.storeSectionTitle}>หลักฐานการเช็คอิน</Text>
+                <Pressable
+                  style={styles.storeHistoryLink}
+                  hitSlop={10}
+                  onPress={() =>
+                    router.push({
+                      pathname: "/(officer)/checkin-history",
+                      params: {
+                        vendorId: storeSheet.vendorId,
+                        shopName:
+                          storeContract?.shop_name?.trim() ||
+                          storeSheet.shopName,
+                        zoneName: storeSheet.zoneName,
+                      },
+                    })
+                  }
+                >
+                  <Text style={styles.storeHistoryText}>ประวัติการเช็คอิน</Text>
+                  <Ionicons
+                    name="chevron-forward"
+                    size={18}
+                    color="#111827"
+                  />
+                </Pressable>
+              </View>
+
+              <Text style={styles.storeDateText}>
+                {formatThaiDate(storeCheckin?.checkin_time)}
+              </Text>
+
+              {storeLoading ? (
+                <View style={styles.inlineLoadingRow}>
+                  <ActivityIndicator size="small" color="#F79432" />
+                  <Text style={styles.inlineLoadingText}>กำลังโหลด...</Text>
+                </View>
+              ) : storeError ? (
+                <View style={styles.inlineErrorBox}>
+                  <Text style={styles.inlineErrorText}>{storeError}</Text>
+                </View>
+              ) : (
+                <View style={styles.storePhotoRow}>
+                  <EvidencePhoto
+                    uri={storeCheckin?.checkin_photo ?? ""}
+                    label={`เช็คอิน: ${formatTimeHHmmWithSuffix(
+                      storeCheckin?.checkin_time,
+                    )}`}
+                    onPress={(uri, label) => openPhotoViewer(uri, label)}
+                  />
+                  <EvidencePhoto
+                    uri={storeCheckin?.checkout_photo ?? ""}
+                    label={`เช็คเอาท์: ${formatTimeHHmmWithSuffix(
+                      storeCheckin?.checkout_time,
+                    )}`}
+                    onPress={(uri, label) => openPhotoViewer(uri, label)}
+                  />
+                </View>
+              )}
+
+              <Pressable
+                onPress={() =>
+                  router.push({
+                    pathname: "/(officer)/inspect",
+                    params: {
+                      vendorId: storeSheet.vendorId,
+                      zoneId: storeSheet.zoneId,
+                      shopName:
+                        storeContract?.shop_name?.trim() ||
+                        storeSheet.shopName,
+                    },
+                  })
+                }
+                style={styles.storeInspectButton}
+                disabled={storeLoading}
+              >
+                <Ionicons
+                  name="document-text-outline"
+                  size={22}
+                  color="white"
+                />
+                <Text style={styles.storeInspectButtonText}>ตรวจสอบร้านค้า</Text>
+              </Pressable>
+            </View>
+          </Animated.View>
+        </>
+      ) : null}
 
       {photoViewer ? (
         <View style={styles.photoViewerRoot}>
@@ -1206,14 +1208,14 @@ const styles = StyleSheet.create({
     left: 0,
     right: 0,
     backgroundColor: "white",
-    paddingBottom: 8,
+    paddingBottom: 18,
     borderBottomLeftRadius: 20,
     borderBottomRightRadius: 20,
     elevation: 5,
   },
   headerBlock: {
     backgroundColor: "white",
-    paddingBottom: 8,
+    paddingBottom: 18,
     borderBottomLeftRadius: 20,
     borderBottomRightRadius: 20,
     elevation: 2,
@@ -1223,7 +1225,7 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "space-between",
     paddingHorizontal: 18,
-    paddingTop: 6,
+    paddingTop: 2,
   },
   backButton: {
     width: 36,
@@ -1248,16 +1250,16 @@ const styles = StyleSheet.create({
 
   tabPill: {
     flexDirection: "row",
-    marginTop: 10,
+    marginTop: 6,
     marginHorizontal: 18,
     backgroundColor: "#E9EEF5",
     borderRadius: 16,
-    padding: 4,
-    gap: 6,
+    padding: 3,
+    gap: 5,
   },
   tabBtn: {
     flex: 1,
-    height: 38,
+    height: 34,
     borderRadius: 12,
     flexDirection: "row",
     alignItems: "center",
@@ -1269,20 +1271,8 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: "#E5E7EB",
   },
-  tabText: { fontSize: 16, fontWeight: "900", color: "#6B7280" },
+  tabText: { fontSize: 15, fontWeight: "900", color: "#6B7280" },
   tabTextActive: { color: "#111827" },
-
-  searchRow: { paddingHorizontal: 18, paddingTop: 8 },
-  searchBar: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 10,
-    backgroundColor: "#F3F4F6",
-    borderRadius: 14,
-    paddingHorizontal: 12,
-    height: 40,
-  },
-  searchInput: { flex: 1, fontSize: 14, color: "#111827" },
 
   customMarker: {
     width: 30,
