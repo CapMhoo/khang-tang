@@ -13,6 +13,7 @@ import {
 export default function OfficerInspectScreen() {
   const router = useRouter();
   const params = useLocalSearchParams<{
+    contractId?: string;
     vendorId?: string;
     zoneId?: string;
     shopName?: string;
@@ -36,6 +37,9 @@ export default function OfficerInspectScreen() {
 
       <View style={styles.card}>
         <Text style={styles.title}>Inspection Page</Text>
+        <Text style={styles.subtitle}>
+          contractId: {params.contractId ?? "-"}
+        </Text>
         <Text style={styles.subtitle}>
           vendorId: {params.vendorId ?? "-"}
         </Text>

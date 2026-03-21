@@ -34,9 +34,10 @@ export default function OfficerHomeScreen() {
   const officerName = params.officerName || "เจ้าหน้าที่";
 
   const settingsBtnRef = useRef<any>(null);
-  const [settingsMenu, setSettingsMenu] = useState<{ x: number; y: number } | null>(
-    null,
-  );
+  const [settingsMenu, setSettingsMenu] = useState<{
+    x: number;
+    y: number;
+  } | null>(null);
 
   const [zones, setZones] = useState<Zone[]>([]);
   const [zonesLoading, setZonesLoading] = useState(true);
@@ -45,15 +46,15 @@ export default function OfficerHomeScreen() {
   const [summaryLoading, setSummaryLoading] = useState(false);
   const [summaryError, setSummaryError] = useState<string | null>(null);
   const [summary, setSummary] = useState<{
-    totalZones: number;
-    inspectedZonesToday: number;
-    checkinZonesToday: number;
+    totalVendors: number;
+    inspectedVendorsToday: number;
+    checkinVendorsToday: number;
     lowScoreShops: number;
     avgScore: number;
   }>({
-    totalZones: 0,
-    inspectedZonesToday: 0,
-    checkinZonesToday: 0,
+    totalVendors: 0,
+    inspectedVendorsToday: 0,
+    checkinVendorsToday: 0,
     lowScoreShops: 3,
     avgScore: 80,
   });
@@ -103,12 +104,12 @@ export default function OfficerHomeScreen() {
     setSelectedDistrictIndex((i) => (i + 1) % districtOptions.length);
   };
 
-  const getTodayRangeIso = () => {
-    const start = new Date();
-    start.setHours(0, 0, 0, 0);
-    const end = new Date(start);
-    end.setDate(start.getDate() + 1);
-    return { startIso: start.toISOString(), endIso: end.toISOString() };
+  const getTodayYmdLocal = () => {
+    const d = new Date();
+    const yyyy = d.getFullYear();
+    const mm = String(d.getMonth() + 1).padStart(2, "0");
+    const dd = String(d.getDate()).padStart(2, "0");
+    return `${yyyy}-${mm}-${dd}`;
   };
 
   useEffect(() => {
@@ -118,9 +119,9 @@ export default function OfficerHomeScreen() {
     if (zones.length === 0) {
       setSummary((prev) => ({
         ...prev,
-        totalZones: 0,
-        inspectedZonesToday: 0,
-        checkinZonesToday: 0,
+        totalVendors: 0,
+        inspectedVendorsToday: 0,
+        checkinVendorsToday: 0,
       }));
       return;
     }
@@ -128,7 +129,15 @@ export default function OfficerHomeScreen() {
     (async () => {
       setSummaryLoading(true);
       setSummaryError(null);
-      const { startIso, endIso } = getTodayRangeIso();
+      const todayYmd = getTodayYmdLocal();
+      const offsetMinutes = -new Date().getTimezoneOffset();
+      const sign = offsetMinutes >= 0 ? "+" : "-";
+      const abs = Math.abs(offsetMinutes);
+      const hh = String(Math.floor(abs / 60)).padStart(2, "0");
+      const mm = String(abs % 60).padStart(2, "0");
+      const offset = `${sign}${hh}:${mm}`;
+      const startTs = `${todayYmd}T00:00:00${offset}`;
+      const endTs = `${todayYmd}T23:59:59.999${offset}`;
 
       const zoneIds = zones
         .filter(
@@ -141,73 +150,98 @@ export default function OfficerHomeScreen() {
         if (!mounted) return;
         setSummary((prev) => ({
           ...prev,
-          totalZones: 0,
-          inspectedZonesToday: 0,
-          checkinZonesToday: 0,
+          totalVendors: 0,
+          inspectedVendorsToday: 0,
+          checkinVendorsToday: 0,
         }));
         setSummaryLoading(false);
         return;
       }
 
       try {
-        const { data: inspections, error: inspectionsError } = await supabase
-          .from("inspections")
-          .select("zone_id")
-          .in("zone_id", zoneIds)
-          .gte("created_at", startIso)
-          .lt("created_at", endIso)
-          .limit(10000);
-        if (inspectionsError) throw inspectionsError;
+        const pageSize = 1000;
+        const allContracts: any[] = [];
+        for (let from = 0; ; from += pageSize) {
+          const { data, error } = await supabase
+            .from("contracts")
+            .select("id, vendor_id, start_date, end_date")
+            .in("zone_id", zoneIds)
+            .eq("status", "active")
+            .range(from, from + pageSize - 1);
+          if (error) throw error;
+          allContracts.push(...(data ?? []));
+          if (!data || data.length < pageSize) break;
+        }
 
-        const inspectedZoneIds = new Set(
-          (inspections ?? []).map((row: any) => String(row.zone_id)),
-        );
+        const activeContractsToday = allContracts.filter((c: any) => {
+          const start = (c.start_date as string | null) ?? null;
+          const end = (c.end_date as string | null) ?? null;
+          const startOk = !start || start <= todayYmd;
+          const endOk = !end || end >= todayYmd;
+          return startOk && endOk;
+        });
 
-        const { data: contracts, error: contractsError } = await supabase
-          .from("contracts")
-          .select("zone_id, vendor_id")
-          .in("zone_id", zoneIds)
-          .eq("status", "active")
-          .limit(10000);
-        if (contractsError) throw contractsError;
-
-        const vendorToZone = new Map<string, string>();
+        const contractIdToVendorId = new Map<string, string>();
+        const contractIds: string[] = [];
         const vendorIds: string[] = [];
-        for (const c of contracts ?? []) {
+        const vendorIdSet = new Set<string>();
+        for (const c of activeContractsToday) {
+          const cid = String((c as any).id ?? "");
           const vid = String((c as any).vendor_id ?? "");
-          const zid = String((c as any).zone_id ?? "");
-          if (!vid || !zid) continue;
-          if (!vendorToZone.has(vid)) {
-            vendorToZone.set(vid, zid);
+          if (cid && vid) contractIdToVendorId.set(cid, vid);
+          if (cid) contractIds.push(cid);
+          if (vid && !vendorIdSet.has(vid)) {
+            vendorIdSet.add(vid);
             vendorIds.push(vid);
           }
         }
 
-        const { data: checkins, error: checkinsError } = vendorIds.length
-          ? await supabase
-              .from("daily_checkins")
-              .select("vendor_id, checkin_time")
-              .in("vendor_id", vendorIds)
-              .gte("checkin_time", startIso)
-              .lt("checkin_time", endIso)
-              .order("checkin_time", { ascending: false })
-              .limit(10000)
-          : { data: [], error: null };
-        if (checkinsError) throw checkinsError;
+        const chunk = <T,>(arr: T[], size: number) => {
+          const out: T[][] = [];
+          for (let i = 0; i < arr.length; i += size)
+            out.push(arr.slice(i, i + size));
+          return out;
+        };
 
-        const checkinZoneIds = new Set<string>();
-        for (const ci of checkins ?? []) {
-          const vid = String((ci as any).vendor_id ?? "");
-          const zid = vendorToZone.get(vid);
-          if (zid) checkinZoneIds.add(zid);
+        const inspectedVendorIds = new Set<string>();
+        for (const ids of chunk(contractIds, 200)) {
+          const { data, error } = await supabase
+            .from("inspections")
+            .select("contract_id, created_at")
+            .in("contract_id", ids)
+            .gte("created_at", startTs)
+            .lte("created_at", endTs)
+            .range(0, 9999);
+          if (error) throw error;
+          for (const row of data ?? []) {
+            const cid = String((row as any).contract_id ?? "");
+            const vid = contractIdToVendorId.get(cid);
+            if (vid) inspectedVendorIds.add(vid);
+          }
+        }
+
+        const checkinVendorIds = new Set<string>();
+        for (const ids of chunk(vendorIds, 200)) {
+          const { data, error } = await supabase
+            .from("daily_checkins")
+            .select("vendor_id, checkin_time")
+            .in("vendor_id", ids)
+            .gte("checkin_time", startTs)
+            .lte("checkin_time", endTs)
+            .range(0, 9999);
+          if (error) throw error;
+          for (const row of data ?? []) {
+            const vid = String((row as any).vendor_id ?? "");
+            if (vid) checkinVendorIds.add(vid);
+          }
         }
 
         if (!mounted) return;
         setSummary((prev) => ({
           ...prev,
-          totalZones: zoneIds.length,
-          inspectedZonesToday: inspectedZoneIds.size,
-          checkinZonesToday: checkinZoneIds.size,
+          totalVendors: vendorIds.length,
+          inspectedVendorsToday: inspectedVendorIds.size,
+          checkinVendorsToday: checkinVendorIds.size,
         }));
       } catch (err: any) {
         console.error("Fetch summary error:", err);
@@ -314,79 +348,84 @@ export default function OfficerHomeScreen() {
             </Text>
           </Pressable>
 
-          <View style={styles.summaryCard}>
-            <View style={styles.summaryHeader}>
-              <Text style={styles.summaryHeaderTitle}>ภาพรวม</Text>
-              <Pressable
-                style={styles.summaryDistrictPill}
-                onPress={cycleDistrict}
-                hitSlop={10}
-                disabled={zonesLoading || districtOptions.length <= 1}
-              >
-                <Text style={styles.summaryDistrictText} numberOfLines={1}>
-                  เขต
-                  {selectedDistrict === "ทั้งหมด"
-                    ? "ทั้งหมด"
-                    : selectedDistrict}
-                </Text>
-                <Ionicons name="chevron-down" size={16} color="white" />
-              </Pressable>
+          <View style={styles.summaryWrapper}>
+            <View style={styles.summaryCard}>
+              <View style={styles.summaryHeader}>
+                <Text style={styles.summaryHeaderTitle}>ภาพรวม</Text>
+                <Pressable
+                  style={styles.summaryDistrictPill}
+                  onPress={cycleDistrict}
+                  hitSlop={10}
+                  disabled={zonesLoading || districtOptions.length <= 1}
+                >
+                  <Text style={styles.summaryDistrictText} numberOfLines={1}>
+                    เขต
+                    {selectedDistrict === "ทั้งหมด"
+                      ? "ทั้งหมด"
+                      : selectedDistrict}
+                  </Text>
+                  <Ionicons name="chevron-down" size={16} color="white" />
+                </Pressable>
+              </View>
+
+              {zonesLoading || summaryLoading ? (
+                <View style={styles.summaryLoading}>
+                  <ActivityIndicator size="small" color="#64748B" />
+                  <Text style={styles.summaryLoadingText}>กำลังโหลด...</Text>
+                </View>
+              ) : summaryError ? (
+                <View style={styles.summaryErrorBox}>
+                  <Text style={styles.summaryErrorText}>{summaryError}</Text>
+                </View>
+              ) : (
+                <View style={styles.summaryGrid}>
+                  <SummaryTile
+                    value={`${summary.inspectedVendorsToday}/${summary.totalVendors}`}
+                    label="ตรวจสอบแล้ว"
+                  />
+                  <SummaryTile
+                    value={`${summary.checkinVendorsToday}/${summary.totalVendors}`}
+                    label="เช็คอินวันนี้"
+                  />
+                  <SummaryTile
+                    value={`${summary.lowScoreShops}`}
+                    label="ร้านค้าคะแนนต่ำ"
+                  />
+                  <SummaryTile
+                    value={`${summary.avgScore}`}
+                    label="คะแนนเฉลี่ย"
+                  />
+                </View>
+              )}
             </View>
-
-            {zonesLoading || summaryLoading ? (
-              <View style={styles.summaryLoading}>
-                <ActivityIndicator size="small" color="#64748B" />
-                <Text style={styles.summaryLoadingText}>กำลังโหลด...</Text>
-              </View>
-            ) : summaryError ? (
-              <View style={styles.summaryErrorBox}>
-                <Text style={styles.summaryErrorText}>{summaryError}</Text>
-              </View>
-            ) : (
-              <View style={styles.summaryGrid}>
-                <SummaryTile
-                  value={`${summary.inspectedZonesToday}/${summary.totalZones}`}
-                  label="ตรวจสอบแล้ว"
-                />
-                <SummaryTile
-                  value={`${summary.checkinZonesToday}/${summary.totalZones}`}
-                  label="เช็คอินวันนี้"
-                />
-                <SummaryTile
-                  value={`${summary.lowScoreShops}`}
-                  label="ร้านค้าคะแนนต่ำ"
-                />
-                <SummaryTile value={`${summary.avgScore}`} label="คะแนนเฉลี่ย" />
-              </View>
-            )}
           </View>
-	        </View>
-	      </View>
+        </View>
+      </View>
 
-	      <Modal
-	        transparent
-	        visible={Boolean(settingsMenu)}
-	        animationType="fade"
-	        onRequestClose={closeSettingsMenu}
-	      >
-	        <Pressable style={styles.menuBackdrop} onPress={closeSettingsMenu}>
-	          <Pressable
-	            style={[
-	              styles.menuCard,
-	              { top: settingsMenu?.y ?? 0, left: settingsMenu?.x ?? 0 },
-	            ]}
-	            onPress={() => {}}
-	          >
-	            <Pressable style={styles.menuItem} onPress={logout}>
-	              <Ionicons name="log-out-outline" size={20} color="#111827" />
-	              <Text style={styles.menuItemText}>ออกจากระบบ</Text>
-	            </Pressable>
-	          </Pressable>
-	        </Pressable>
-	      </Modal>
-	    </SafeAreaView>
-	  );
-	}
+      <Modal
+        transparent
+        visible={Boolean(settingsMenu)}
+        animationType="fade"
+        onRequestClose={closeSettingsMenu}
+      >
+        <Pressable style={styles.menuBackdrop} onPress={closeSettingsMenu}>
+          <Pressable
+            style={[
+              styles.menuCard,
+              { top: settingsMenu?.y ?? 0, left: settingsMenu?.x ?? 0 },
+            ]}
+            onPress={() => {}}
+          >
+            <Pressable style={styles.menuItem} onPress={logout}>
+              <Ionicons name="log-out-outline" size={20} color="#111827" />
+              <Text style={styles.menuItemText}>ออกจากระบบ</Text>
+            </Pressable>
+          </Pressable>
+        </Pressable>
+      </Modal>
+    </SafeAreaView>
+  );
+}
 
 function SummaryTile({ value, label }: { value: string; label: string }) {
   return (
@@ -402,23 +441,24 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: "#F3F4F6",
   },
-  page: { flex: 1, paddingHorizontal: 18, paddingTop: 8, paddingBottom: 14 },
+  page: { flex: 1, paddingTop: 4, paddingBottom: 34 },
   topRow: {
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
-    paddingVertical: 6,
+    paddingVertical: 4,
+    paddingHorizontal: 14,
   },
   greetingText: {
-    fontSize: 24,
+    fontSize: 20,
     fontWeight: "900",
     color: "#111827",
   },
   topIconRow: { flexDirection: "row", alignItems: "center", gap: 12 },
   topIconBtn: {
-    width: 38,
-    height: 38,
-    borderRadius: 19,
+    width: 30,
+    height: 30,
+    borderRadius: 15,
     backgroundColor: "#E5E7EB",
     alignItems: "center",
     justifyContent: "center",
@@ -454,23 +494,19 @@ const styles = StyleSheet.create({
   },
   menuItemText: { fontSize: 16, fontWeight: "900", color: "#111827" },
 
-  content: { flex: 1, gap: 12, paddingTop: 10 },
+  // Don't stretch vertically; leave breathing room at the bottom like the mock.
+  content: { gap: 0, paddingTop: 6 },
 
   heroCard: {
-    borderRadius: 22,
+    borderRadius: 0,
     paddingHorizontal: 16,
     paddingVertical: 14,
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 8 },
-    shadowOpacity: 0.08,
-    shadowRadius: 14,
-    elevation: 4,
   },
   heroCardPrimary: { backgroundColor: "#6B7280" },
   heroCardSecondary: { backgroundColor: "#475569" },
   heroIconSquare: {
-    width: 44,
-    height: 44,
+    width: 40,
+    height: 40,
     borderRadius: 16,
     backgroundColor: "white",
     alignItems: "center",
@@ -487,14 +523,18 @@ const styles = StyleSheet.create({
     borderRadius: 28,
   },
   heroTitle: {
-    fontSize: 20,
+    fontSize: 17,
     fontWeight: "900",
     color: "white",
-    lineHeight: 26,
+    lineHeight: 22,
   },
 
+  summaryWrapper: {
+    paddingHorizontal: 14,
+    paddingTop: 10,
+    paddingBottom: 12,
+  },
   summaryCard: {
-    flex: 1,
     backgroundColor: "white",
     borderRadius: 22,
     overflow: "hidden",
@@ -506,58 +546,58 @@ const styles = StyleSheet.create({
   },
   summaryHeader: {
     backgroundColor: "#475569",
-    paddingHorizontal: 16,
-    paddingVertical: 10,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
   },
-  summaryHeaderTitle: { fontSize: 18, fontWeight: "900", color: "white" },
+  summaryHeaderTitle: { fontSize: 16, fontWeight: "900", color: "white" },
   summaryDistrictPill: {
     flexDirection: "row",
     alignItems: "center",
     gap: 8,
-    paddingHorizontal: 12,
-    height: 32,
-    borderRadius: 16,
+    paddingHorizontal: 10,
+    height: 28,
+    borderRadius: 14,
     borderWidth: 1,
     borderColor: "rgba(255,255,255,0.25)",
     backgroundColor: "rgba(255,255,255,0.1)",
   },
-  summaryDistrictText: { fontSize: 14, fontWeight: "900", color: "white" },
+  summaryDistrictText: { fontSize: 12, fontWeight: "900", color: "white" },
 
   summaryGrid: {
-    padding: 12,
+    padding: 8,
     flexDirection: "row",
     flexWrap: "wrap",
-    gap: 12,
+    gap: 8,
   },
   summaryTile: {
     flexBasis: "48%",
     flexGrow: 1,
     backgroundColor: "#F9FAFB",
-    borderRadius: 16,
-    padding: 12,
+    borderRadius: 14,
+    padding: 8,
     borderWidth: 1,
     borderColor: "#E5E7EB",
   },
   summaryValue: {
-    fontSize: 34,
+    fontSize: 26,
     fontWeight: "900",
     color: "#111827",
-    marginBottom: 6,
-    lineHeight: 38,
+    marginBottom: 4,
+    lineHeight: 30,
   },
-  summaryLabel: { fontSize: 14, fontWeight: "900", color: "#6B7280" },
+  summaryLabel: { fontSize: 12, fontWeight: "900", color: "#6B7280" },
 
   summaryLoading: {
-    padding: 18,
+    padding: 14,
     flexDirection: "row",
     alignItems: "center",
     gap: 10,
   },
-  summaryLoadingText: { fontSize: 14, fontWeight: "800", color: "#475569" },
-  summaryErrorBox: { padding: 18 },
+  summaryLoadingText: { fontSize: 13, fontWeight: "800", color: "#475569" },
+  summaryErrorBox: { padding: 14 },
   summaryErrorText: { fontSize: 13, fontWeight: "800", color: "#991B1B" },
 });
 
