@@ -53,6 +53,7 @@ type StoreSheetParams = {
 };
 
 type StoreContract = {
+  id: string;
   shop_name: string | null;
   product_type: string | null;
   vendors: { first_name: string | null; last_name: string | null } | null;
@@ -90,14 +91,15 @@ export default function ZoneMapScreen() {
   );
   const [selectedZoneId, setSelectedZoneId] = useState<string | null>(null);
 
-  const SHEET_HEIGHT = SCREEN_HEIGHT * 0.45;
-  const SHEET_PEEK = 84;
+  // Keep the map dominant; sheets should feel compact.
+  const SHEET_HEIGHT = SCREEN_HEIGHT * 0.38;
+  const SHEET_PEEK = 72;
   const SHEET_COLLAPSED_Y = SHEET_HEIGHT - SHEET_PEEK;
   const sheetTranslateY = useSharedValue(0);
   const sheetStartY = useSharedValue(0);
 
-  const STORE_SHEET_HEIGHT = SCREEN_HEIGHT * 0.72;
-  const STORE_SHEET_PEEK = 96;
+  const STORE_SHEET_HEIGHT = SCREEN_HEIGHT * 0.62;
+  const STORE_SHEET_PEEK = 84;
   const STORE_SHEET_COLLAPSED_Y = STORE_SHEET_HEIGHT - STORE_SHEET_PEEK;
   const storeSheetTranslateY = useSharedValue(STORE_SHEET_COLLAPSED_Y);
   const storeSheetStartY = useSharedValue(STORE_SHEET_COLLAPSED_Y);
@@ -120,6 +122,14 @@ export default function ZoneMapScreen() {
     restDisplacementThreshold: 0.5,
     restSpeedThreshold: 0.5,
   } as const;
+
+  const getTodayYmdLocal = () => {
+    const d = new Date();
+    const yyyy = d.getFullYear();
+    const mm = String(d.getMonth() + 1).padStart(2, "0");
+    const dd = String(d.getDate()).padStart(2, "0");
+    return `${yyyy}-${mm}-${dd}`;
+  };
 
   useEffect(() => {
     (async () => {
@@ -153,25 +163,38 @@ export default function ZoneMapScreen() {
       const zoneIds = (data ?? []).map((z: any) => String(z.id));
       const contractsCountByZoneId = new Map<string, number>();
       if (zoneIds.length > 0) {
-        const { data: contracts, error: contractsError } = await supabase
-          .from("contracts")
-          .select("zone_id")
-          .eq("status", "active")
-          .in("zone_id", zoneIds)
-          .limit(10000);
+        const todayYmd = getTodayYmdLocal();
+        const pageSize = 1000;
+        const allContracts: any[] = [];
+        for (let from = 0; ; from += pageSize) {
+          const { data: contracts, error: contractsError } = await supabase
+            .from("contracts")
+            .select("zone_id, start_date, end_date")
+            .eq("status", "active")
+            .in("zone_id", zoneIds)
+            .range(from, from + pageSize - 1);
+          if (contractsError) {
+            console.error("Fetch contracts count error:", contractsError);
+            break;
+          }
+          allContracts.push(...(contracts ?? []));
+          if (!contracts || contracts.length < pageSize) break;
+        }
 
         if (!isMounted) return;
 
-        if (contractsError) {
-          console.error("Fetch contracts count error:", contractsError);
-        } else {
-          for (const row of contracts ?? []) {
-            const zid = String((row as any).zone_id);
-            contractsCountByZoneId.set(
-              zid,
-              (contractsCountByZoneId.get(zid) ?? 0) + 1,
-            );
-          }
+        for (const row of allContracts) {
+          const start = ((row as any).start_date as string | null) ?? null;
+          const end = ((row as any).end_date as string | null) ?? null;
+          const startOk = !start || start <= todayYmd;
+          const endOk = !end || end >= todayYmd;
+          if (!startOk || !endOk) continue;
+          const zid = String((row as any).zone_id ?? "");
+          if (!zid) continue;
+          contractsCountByZoneId.set(
+            zid,
+            (contractsCountByZoneId.get(zid) ?? 0) + 1,
+          );
         }
       }
 
@@ -220,11 +243,9 @@ export default function ZoneMapScreen() {
     districtOptions[selectedDistrictIndex] ?? districtOptions[0];
 
   const filteredZones = useMemo(() => {
-    return zones
-      .filter(
-        (z) =>
-          selectedDistrict === "ทั้งหมด" || z.district === selectedDistrict,
-      );
+    return zones.filter(
+      (z) => selectedDistrict === "ทั้งหมด" || z.district === selectedDistrict,
+    );
   }, [zones, selectedDistrict]);
 
   const mapZonesWithCoords = filteredZones.filter(
@@ -253,14 +274,6 @@ export default function ZoneMapScreen() {
 
   const cycleDistrict = () => {
     setSelectedDistrictIndex((i) => (i + 1) % districtOptions.length);
-  };
-
-  const getTodayRangeIso = () => {
-    const start = new Date();
-    start.setHours(0, 0, 0, 0);
-    const end = new Date(start);
-    end.setDate(start.getDate() + 1);
-    return { startIso: start.toISOString(), endIso: end.toISOString() };
   };
 
   const formatTimeHHmm = (value: string | null | undefined) => {
@@ -312,9 +325,12 @@ export default function ZoneMapScreen() {
     storeSheetTranslateY.value = withSpring(0, springConfig);
 
     try {
+      const todayYmd = getTodayYmdLocal();
       const { data: contractData, error: contractError } = await supabase
         .from("contracts")
-        .select("shop_name, product_type, vendors(first_name, last_name)")
+        .select(
+          "id, shop_name, product_type, start_date, end_date, vendors(first_name, last_name)",
+        )
         .eq("vendor_id", params.vendorId)
         .eq("zone_id", params.zoneId)
         .eq("status", "active")
@@ -323,7 +339,14 @@ export default function ZoneMapScreen() {
         .maybeSingle();
 
       if (contractError) throw contractError;
-      setStoreContract(contractData as any);
+      const start = (contractData as any)?.start_date as
+        | string
+        | null
+        | undefined;
+      const end = (contractData as any)?.end_date as string | null | undefined;
+      const startOk = !start || start <= todayYmd;
+      const endOk = !end || end >= todayYmd;
+      setStoreContract(startOk && endOk ? (contractData as any) : null);
 
       const { data: checkinData, error: checkinError } = await supabase
         .from("daily_checkins")
@@ -368,7 +391,15 @@ export default function ZoneMapScreen() {
     setZoneDetailsErrorById((prev) => ({ ...prev, [zoneId]: null }));
 
     try {
-      const { startIso, endIso } = getTodayRangeIso();
+      const todayYmd = getTodayYmdLocal();
+      const offsetMinutes = -new Date().getTimezoneOffset();
+      const sign = offsetMinutes >= 0 ? "+" : "-";
+      const abs = Math.abs(offsetMinutes);
+      const hh = String(Math.floor(abs / 60)).padStart(2, "0");
+      const mm = String(abs % 60).padStart(2, "0");
+      const offset = `${sign}${hh}:${mm}`;
+      const startTs = `${todayYmd}T00:00:00${offset}`;
+      const endTs = `${todayYmd}T23:59:59.999${offset}`;
 
       const { data: activeContracts, error: activeContractsError } =
         await supabase
@@ -381,8 +412,16 @@ export default function ZoneMapScreen() {
 
       if (activeContractsError) throw activeContractsError;
 
+      const activeContractsToday = (activeContracts ?? []).filter((c: any) => {
+        const start = (c.start_date as string | null) ?? null;
+        const end = (c.end_date as string | null) ?? null;
+        const startOk = !start || start <= todayYmd;
+        const endOk = !end || end >= todayYmd;
+        return startOk && endOk;
+      });
+
       const vendorIds = Array.from(
-        new Set((activeContracts ?? []).map((c: any) => String(c.vendor_id))),
+        new Set(activeContractsToday.map((c: any) => String(c.vendor_id))),
       ).filter(Boolean);
 
       const { data: checkins, error: checkinsError } = vendorIds.length
@@ -390,8 +429,8 @@ export default function ZoneMapScreen() {
             .from("daily_checkins")
             .select("vendor_id, checkin_time, checkout_time")
             .in("vendor_id", vendorIds)
-            .gte("checkin_time", startIso)
-            .lt("checkin_time", endIso)
+            .gte("checkin_time", startTs)
+            .lte("checkin_time", endTs)
             .order("checkin_time", { ascending: false })
         : { data: [], error: null };
 
@@ -411,19 +450,30 @@ export default function ZoneMapScreen() {
         }
       }
 
-      const { data: inspections, error: inspectionsError } = await supabase
-        .from("inspections")
-        .select("id")
-        .eq("zone_id", zoneId)
-        .gte("created_at", startIso)
-        .lt("created_at", endIso)
-        .limit(1);
+      const contractIds = activeContractsToday
+        .map((c: any) => String(c.id))
+        .filter(Boolean);
 
-      if (inspectionsError) throw inspectionsError;
+      const inspectedContractIds = new Set<string>();
+      if (contractIds.length) {
+        for (let i = 0; i < contractIds.length; i += 200) {
+          const ids = contractIds.slice(i, i + 200);
+          const { data, error } = await supabase
+            .from("inspections")
+            .select("contract_id, created_at")
+            .in("contract_id", ids)
+            .gte("created_at", startTs)
+            .lte("created_at", endTs)
+            .range(0, 9999);
+          if (error) throw error;
+          for (const row of data ?? []) {
+            const cid = String((row as any).contract_id ?? "");
+            if (cid) inspectedContractIds.add(cid);
+          }
+        }
+      }
 
-      const inspectedToday = (inspections?.length ?? 0) > 0;
-
-      const vendors: ZoneVendor[] = (activeContracts ?? []).map((c: any) => {
+      const vendors: ZoneVendor[] = activeContractsToday.map((c: any) => {
         const vendorId = String(c.vendor_id);
         const first = c.vendors?.first_name ?? "";
         const last = c.vendors?.last_name ?? "";
@@ -441,7 +491,7 @@ export default function ZoneMapScreen() {
             vendorId,
           checkInTime,
           checkOutTime,
-          inspected: inspectedToday,
+          inspected: inspectedContractIds.has(String(c.id)),
         };
       });
 
@@ -530,7 +580,8 @@ export default function ZoneMapScreen() {
         return;
       }
 
-      const shouldCollapse = storeSheetTranslateY.value > STORE_SHEET_COLLAPSED_Y / 2;
+      const shouldCollapse =
+        storeSheetTranslateY.value > STORE_SHEET_COLLAPSED_Y / 2;
       storeSheetTranslateY.value = withSpring(
         shouldCollapse ? STORE_SHEET_COLLAPSED_Y : 0,
         springConfig,
@@ -603,7 +654,6 @@ export default function ZoneMapScreen() {
           </Text>
         </Pressable>
       </View>
-
     </SafeAreaView>
   );
 
@@ -1041,11 +1091,7 @@ export default function ZoneMapScreen() {
                   }
                 >
                   <Text style={styles.storeHistoryText}>ประวัติการเช็คอิน</Text>
-                  <Ionicons
-                    name="chevron-forward"
-                    size={18}
-                    color="#111827"
-                  />
+                  <Ionicons name="chevron-forward" size={18} color="#111827" />
                 </Pressable>
               </View>
 
@@ -1086,23 +1132,25 @@ export default function ZoneMapScreen() {
                   router.push({
                     pathname: "/(officer)/inspect",
                     params: {
+                      contractId: storeContract?.id,
                       vendorId: storeSheet.vendorId,
                       zoneId: storeSheet.zoneId,
                       shopName:
-                        storeContract?.shop_name?.trim() ||
-                        storeSheet.shopName,
+                        storeContract?.shop_name?.trim() || storeSheet.shopName,
                     },
                   })
                 }
                 style={styles.storeInspectButton}
-                disabled={storeLoading}
+                disabled={storeLoading || !storeContract?.id}
               >
                 <Ionicons
                   name="document-text-outline"
                   size={22}
                   color="white"
                 />
-                <Text style={styles.storeInspectButtonText}>ตรวจสอบร้านค้า</Text>
+                <Text style={styles.storeInspectButtonText}>
+                  ตรวจสอบร้านค้า
+                </Text>
               </Pressable>
             </View>
           </Animated.View>
@@ -1182,12 +1230,12 @@ const styles = StyleSheet.create({
   },
   centerText: {
     marginTop: 10,
-    fontSize: 14,
+    fontSize: 13,
     fontWeight: "700",
     color: "#374151",
   },
   errorTitle: {
-    fontSize: 16,
+    fontSize: 15,
     fontWeight: "900",
     color: "#991B1B",
     marginBottom: 6,
@@ -1208,14 +1256,14 @@ const styles = StyleSheet.create({
     left: 0,
     right: 0,
     backgroundColor: "white",
-    paddingBottom: 18,
+    paddingBottom: 14,
     borderBottomLeftRadius: 20,
     borderBottomRightRadius: 20,
     elevation: 5,
   },
   headerBlock: {
     backgroundColor: "white",
-    paddingBottom: 18,
+    paddingBottom: 14,
     borderBottomLeftRadius: 20,
     borderBottomRightRadius: 20,
     elevation: 2,
@@ -1224,17 +1272,17 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
-    paddingHorizontal: 18,
+    paddingHorizontal: 16,
     paddingTop: 2,
   },
   backButton: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
+    width: 34,
+    height: 34,
+    borderRadius: 17,
     alignItems: "center",
     justifyContent: "center",
   },
-  headerTitle: { fontSize: 18, fontWeight: "900", color: "#111827" },
+  headerTitle: { fontSize: 16, fontWeight: "900", color: "#111827" },
   districtPill: {
     flexDirection: "row",
     alignItems: "center",
@@ -1243,15 +1291,15 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: "#E5E7EB",
     borderRadius: 14,
-    paddingHorizontal: 12,
-    height: 36,
+    paddingHorizontal: 10,
+    height: 32,
   },
-  districtText: { fontSize: 14, fontWeight: "800", color: "#111827" },
+  districtText: { fontSize: 13, fontWeight: "800", color: "#111827" },
 
   tabPill: {
     flexDirection: "row",
     marginTop: 6,
-    marginHorizontal: 18,
+    marginHorizontal: 16,
     backgroundColor: "#E9EEF5",
     borderRadius: 16,
     padding: 3,
@@ -1259,7 +1307,7 @@ const styles = StyleSheet.create({
   },
   tabBtn: {
     flex: 1,
-    height: 34,
+    height: 32,
     borderRadius: 12,
     flexDirection: "row",
     alignItems: "center",
@@ -1271,7 +1319,7 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: "#E5E7EB",
   },
-  tabText: { fontSize: 15, fontWeight: "900", color: "#6B7280" },
+  tabText: { fontSize: 13, fontWeight: "900", color: "#6B7280" },
   tabTextActive: { color: "#111827" },
 
   customMarker: {
@@ -1296,12 +1344,12 @@ const styles = StyleSheet.create({
     bottom: 0,
     left: 0,
     right: 0,
-    height: SCREEN_HEIGHT * 0.45,
+    height: SCREEN_HEIGHT * 0.38,
     backgroundColor: "white",
     borderTopLeftRadius: 26,
     borderTopRightRadius: 26,
-    paddingHorizontal: 18,
-    paddingTop: 10,
+    paddingHorizontal: 16,
+    paddingTop: 8,
     elevation: 20,
     shadowColor: "#000",
     shadowOffset: { width: 0, height: -3 },
@@ -1314,31 +1362,31 @@ const styles = StyleSheet.create({
     backgroundColor: "#E5E7EB",
     borderRadius: 3,
     alignSelf: "center",
-    marginBottom: 10,
+    marginBottom: 8,
   },
   sheetHandleHit: {
     paddingTop: 2,
-    paddingBottom: 8,
+    paddingBottom: 6,
   },
   sheetTopRow: {
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
-    marginBottom: 8,
+    marginBottom: 6,
   },
   sheetClose: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
+    width: 34,
+    height: 34,
+    borderRadius: 17,
     alignItems: "center",
     justifyContent: "center",
     backgroundColor: "#F3F4F6",
   },
   sheetTitle: {
-    fontSize: 18,
+    fontSize: 16,
     fontWeight: "900",
     color: "#111827",
-    marginBottom: 10,
+    marginBottom: 8,
   },
 
   zoneRow: {
@@ -1346,29 +1394,29 @@ const styles = StyleSheet.create({
     alignItems: "center",
     backgroundColor: "#F9FAFB",
     borderRadius: 16,
-    padding: 14,
-    marginBottom: 10,
+    padding: 12,
+    marginBottom: 8,
   },
   zoneDot: { width: 10, height: 10, borderRadius: 5, marginRight: 12 },
   zoneRowInfo: { flex: 1 },
-  zoneRowName: { fontSize: 16, fontWeight: "900", color: "#111827" },
+  zoneRowName: { fontSize: 14, fontWeight: "900", color: "#111827" },
   zoneRowSub: { fontSize: 12, color: "#6B7280", marginTop: 2 },
   zoneRowCount: {
-    fontSize: 14,
+    fontSize: 13,
     fontWeight: "900",
     color: "#111827",
     marginRight: 10,
   },
 
   zoneBigTitle: {
-    fontSize: 22,
+    fontSize: 18,
     fontWeight: "900",
     color: "#111827",
-    marginBottom: 10,
+    marginBottom: 8,
   },
-  zoneMetaRow: { flexDirection: "row", gap: 16, marginBottom: 14 },
+  zoneMetaRow: { flexDirection: "row", gap: 12, marginBottom: 10 },
   metaItem: { flexDirection: "row", alignItems: "center", gap: 8 },
-  metaText: { fontSize: 16, fontWeight: "800", color: "#374151" },
+  metaText: { fontSize: 13, fontWeight: "800", color: "#374151" },
 
   inlineLoadingRow: {
     flexDirection: "row",
@@ -1377,7 +1425,7 @@ const styles = StyleSheet.create({
     paddingVertical: 10,
     paddingHorizontal: 6,
   },
-  inlineLoadingText: { fontSize: 14, fontWeight: "800", color: "#374151" },
+  inlineLoadingText: { fontSize: 13, fontWeight: "800", color: "#374151" },
   inlineErrorBox: {
     backgroundColor: "#FEF2F2",
     borderRadius: 12,
@@ -1400,8 +1448,8 @@ const styles = StyleSheet.create({
   vendorCard: {
     backgroundColor: "white",
     borderRadius: 16,
-    padding: 16,
-    marginBottom: 12,
+    padding: 12,
+    marginBottom: 10,
     shadowColor: "#000",
     shadowOffset: { width: 0, height: 6 },
     shadowOpacity: 0.06,
@@ -1413,23 +1461,23 @@ const styles = StyleSheet.create({
   },
   vendorCardLeft: { flex: 1, paddingRight: 12 },
   vendorTitle: {
-    fontSize: 22,
+    fontSize: 17,
     fontWeight: "900",
     color: "#111827",
     marginBottom: 4,
   },
   vendorSub: {
-    fontSize: 16,
+    fontSize: 13,
     fontWeight: "700",
     color: "#374151",
     opacity: 0.9,
   },
   statusChecked: { flexDirection: "row", alignItems: "center", gap: 6 },
-  statusCheckedText: { fontSize: 18, fontWeight: "900", color: "#10B981" },
-  statusPendingText: { fontSize: 18, fontWeight: "900", color: "#64748B" },
+  statusCheckedText: { fontSize: 15, fontWeight: "900", color: "#10B981" },
+  statusPendingText: { fontSize: 15, fontWeight: "900", color: "#64748B" },
 
   listRoot: { flex: 1, backgroundColor: "#F3F4F6" },
-  listContent: { paddingHorizontal: 18, paddingTop: 16, paddingBottom: 20 },
+  listContent: { paddingHorizontal: 16, paddingTop: 14, paddingBottom: 18 },
   zoneListCard: {
     backgroundColor: "white",
     borderRadius: 16,
@@ -1439,9 +1487,9 @@ const styles = StyleSheet.create({
     overflow: "hidden",
   },
   zoneListHeader: {
-    paddingHorizontal: 16,
-    paddingTop: 16,
-    paddingBottom: 10,
+    paddingHorizontal: 14,
+    paddingTop: 14,
+    paddingBottom: 8,
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
@@ -1449,15 +1497,15 @@ const styles = StyleSheet.create({
   zoneListTitle: {
     flex: 1,
     paddingRight: 12,
-    fontSize: 20,
+    fontSize: 16,
     fontWeight: "900",
     color: "#111827",
   },
   vendorList: {
     borderTopWidth: 1,
     borderTopColor: "#E5E7EB",
-    paddingTop: 12,
-    paddingHorizontal: 12,
+    paddingTop: 10,
+    paddingHorizontal: 10,
     paddingBottom: 6,
   },
 
@@ -1470,11 +1518,11 @@ const styles = StyleSheet.create({
     left: 0,
     right: 0,
     bottom: 0,
-    height: SCREEN_HEIGHT * 0.72,
+    height: SCREEN_HEIGHT * 0.62,
     backgroundColor: "white",
     borderTopLeftRadius: 26,
     borderTopRightRadius: 26,
-    paddingTop: 10,
+    paddingTop: 8,
     elevation: 30,
     shadowColor: "#000",
     shadowOffset: { width: 0, height: -6 },
@@ -1483,8 +1531,8 @@ const styles = StyleSheet.create({
   },
   storeSheetBody: {
     flex: 1,
-    paddingHorizontal: 18,
-    paddingBottom: 18,
+    paddingHorizontal: 16,
+    paddingBottom: 16,
   },
   storeSheetTopRow: {
     flexDirection: "row",
@@ -1492,10 +1540,10 @@ const styles = StyleSheet.create({
     marginBottom: 4,
   },
   storeShopTitle: {
-    fontSize: 34,
+    fontSize: 26,
     fontWeight: "900",
     color: "#111827",
-    marginBottom: 10,
+    marginBottom: 8,
   },
   storeSubRow: {
     flexDirection: "row",
@@ -1504,18 +1552,18 @@ const styles = StyleSheet.create({
     marginBottom: 14,
   },
   storeZoneLine: {
-    fontSize: 18,
+    fontSize: 15,
     fontWeight: "900",
     color: "#111827",
-    marginBottom: 4,
+    marginBottom: 3,
   },
-  storeIdentityLine: { fontSize: 15, fontWeight: "800", color: "#374151" },
+  storeIdentityLine: { fontSize: 13, fontWeight: "800", color: "#374151" },
   storeScoreText: {
-    fontSize: 54,
+    fontSize: 44,
     fontWeight: "900",
     color: "#10B981",
     marginLeft: 12,
-    lineHeight: 54,
+    lineHeight: 44,
   },
   storeSectionHeaderRow: {
     paddingTop: 14,
@@ -1525,25 +1573,29 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "space-between",
   },
-  storeSectionTitle: { fontSize: 18, fontWeight: "900", color: "#111827" },
+  storeSectionTitle: { fontSize: 16, fontWeight: "900", color: "#111827" },
   storeHistoryLink: { flexDirection: "row", alignItems: "center", gap: 6 },
-  storeHistoryText: { fontSize: 15, fontWeight: "900", color: "#111827" },
+  storeHistoryText: { fontSize: 13, fontWeight: "900", color: "#111827" },
   storeDateText: {
     marginTop: 10,
-    fontSize: 16,
+    fontSize: 14,
     fontWeight: "900",
     color: "#111827",
   },
   storePhotoRow: { flexDirection: "row", gap: 12, marginTop: 12 },
   storePhotoCard: { flex: 1, borderRadius: 18, overflow: "hidden" },
-  storePhoto: { width: "100%", height: 160, borderRadius: 18 },
+  storePhoto: { width: "100%", height: 136, borderRadius: 18 },
   storePhotoPlaceholder: {
     backgroundColor: "#F3F4F6",
     alignItems: "center",
     justifyContent: "center",
     gap: 6,
   },
-  storePhotoPlaceholderText: { fontSize: 12, fontWeight: "800", color: "#9CA3AF" },
+  storePhotoPlaceholderText: {
+    fontSize: 12,
+    fontWeight: "800",
+    color: "#9CA3AF",
+  },
   storePhotoLabelOverlay: {
     position: "absolute",
     left: 12,
@@ -1556,7 +1608,7 @@ const styles = StyleSheet.create({
   },
   storePhotoLabelText: {
     color: "white",
-    fontSize: 14,
+    fontSize: 13,
     fontWeight: "900",
     textAlign: "center",
   },
@@ -1564,13 +1616,13 @@ const styles = StyleSheet.create({
     marginTop: 16,
     backgroundColor: "#64748B",
     borderRadius: 16,
-    paddingVertical: 16,
+    paddingVertical: 14,
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "center",
     gap: 10,
   },
-  storeInspectButtonText: { color: "white", fontSize: 18, fontWeight: "900" },
+  storeInspectButtonText: { color: "white", fontSize: 16, fontWeight: "900" },
 
   photoViewerRoot: {
     ...StyleSheet.absoluteFillObject,
@@ -1619,7 +1671,7 @@ const styles = StyleSheet.create({
   },
   photoViewerLabelText: {
     color: "white",
-    fontSize: 18,
+    fontSize: 16,
     fontWeight: "900",
     textAlign: "center",
   },
