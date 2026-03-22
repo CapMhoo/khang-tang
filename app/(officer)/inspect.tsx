@@ -3,7 +3,9 @@ import * as ImagePicker from "expo-image-picker";
 import { useRouter } from "expo-router";
 import React, { useState } from "react";
 import {
+  FlatList,
   Image,
+  Modal,
   Pressable,
   SafeAreaView,
   ScrollView,
@@ -15,19 +17,27 @@ import {
   View,
 } from "react-native";
 
+// --- MOCK DATA (You will replace this with real database data later) ---
+const DISTRICT_OPTIONS = ["เขตปทุมวัน", "เขตราชเทวี", "เขตบางรัก", "เขตพระนคร", "เขตจตุจักร"];
+const ZONE_OPTIONS = ["โซนสยามสแควร์", "โซนอนุสาวรีย์ชัยฯ", "โซนสีลม", "โซนข้าวสาร"];
+const VENDOR_OPTIONS = ["V001 - ร้านข้าวมันไก่เฮียชัย", "V002 - ร้านน้ำปั่นเจ๊สม", "V003 - ร้านผลไม้สด"];
+
 export default function OfficerInspectScreen() {
   const router = useRouter();
 
-  // Form State
+  // --- FORM STATE ---
   const [district, setDistrict] = useState("เลือกเขต");
   const [zone, setZone] = useState("เลือกพื้นที่ทำการค้า");
   const [vendor, setVendor] = useState("เลือกร้าน");
+  
   const [cleanliness, setCleanliness] = useState<number | null>(null);
   const [orderliness, setOrderliness] = useState<number | null>(null);
   const [violations, setViolations] = useState<string[]>([]);
   const [imageUri, setImageUri] = useState<string | null>(null);
 
-  // List of violations based on Figma
+  // --- MODAL VISIBILITY STATE ---
+  const [activeDropdown, setActiveDropdown] = useState<"district" | "zone" | "vendor" | null>(null);
+
   const violationOptions = [
     "ตั้งวางสิ่งของเกินเขตหรือนอกจุดที่กำหนด",
     "ทิ้งขยะ/เทน้ำเสีย ลงบนถนนหรือท่อระบายน้ำ",
@@ -36,7 +46,6 @@ export default function OfficerInspectScreen() {
     "ไม่สวมผ้ากันเปื้อน/หมวกคลุมผม (กรณีอาหาร)",
   ];
 
-  // Function to toggle checkboxes
   const toggleViolation = (item: string) => {
     if (violations.includes(item)) {
       setViolations(violations.filter((v) => v !== item));
@@ -45,25 +54,59 @@ export default function OfficerInspectScreen() {
     }
   };
 
-  // Function to open the camera
   const openCamera = async () => {
-    // Ask for permission first
     const permissionResult = await ImagePicker.requestCameraPermissionsAsync();
     if (permissionResult.granted === false) {
       alert("You need to allow camera access to take photos.");
       return;
     }
-
     const result = await ImagePicker.launchCameraAsync({
       allowsEditing: true,
       aspect: [4, 3],
       quality: 0.5,
     });
-
     if (!result.canceled) {
       setImageUri(result.assets[0].uri);
     }
   };
+
+  // --- REUSABLE DROPDOWN COMPONENT ---
+  const renderDropdownModal = (type: "district" | "zone" | "vendor", options: string[], currentValue: string, setValue: (val: string) => void) => (
+    <Modal
+      visible={activeDropdown === type}
+      transparent={true}
+      animationType="fade"
+      onRequestClose={() => setActiveDropdown(null)}
+    >
+      <TouchableOpacity 
+        style={styles.modalOverlay} 
+        activeOpacity={1} 
+        onPress={() => setActiveDropdown(null)}
+      >
+        <View style={styles.modalContent}>
+          <Text style={styles.modalTitle}>เลือกข้อมูล</Text>
+          <FlatList
+            data={options}
+            keyExtractor={(item) => item}
+            renderItem={({ item }) => (
+              <TouchableOpacity
+                style={[styles.modalOption, currentValue === item && styles.modalOptionSelected]}
+                onPress={() => {
+                  setValue(item);
+                  setActiveDropdown(null); // Close modal after selection
+                }}
+              >
+                <Text style={[styles.modalOptionText, currentValue === item && styles.modalOptionTextSelected]}>
+                  {item}
+                </Text>
+                {currentValue === item && <Ionicons name="checkmark" size={20} color="#10B981" />}
+              </TouchableOpacity>
+            )}
+          />
+        </View>
+      </TouchableOpacity>
+    </Modal>
+  );
 
   return (
     <SafeAreaView style={styles.container}>
@@ -83,24 +126,24 @@ export default function OfficerInspectScreen() {
         {/* DROPDOWNS */}
         <View style={styles.inputGroup}>
           <Text style={styles.label}>เขตที่ทำการค้า</Text>
-          <TouchableOpacity style={styles.dropdown}>
-            <Text style={styles.dropdownText}>{district}</Text>
+          <TouchableOpacity style={styles.dropdown} onPress={() => setActiveDropdown("district")}>
+            <Text style={[styles.dropdownText, district !== "เลือกเขต" && styles.dropdownTextActive]}>{district}</Text>
             <Ionicons name="chevron-down" size={20} color="#6B7280" />
           </TouchableOpacity>
         </View>
 
         <View style={styles.inputGroup}>
           <Text style={styles.label}>พื้นที่ทำการค้า</Text>
-          <TouchableOpacity style={styles.dropdown}>
-            <Text style={styles.dropdownText}>{zone}</Text>
+          <TouchableOpacity style={styles.dropdown} onPress={() => setActiveDropdown("zone")}>
+            <Text style={[styles.dropdownText, zone !== "เลือกพื้นที่ทำการค้า" && styles.dropdownTextActive]}>{zone}</Text>
             <Ionicons name="chevron-down" size={20} color="#6B7280" />
           </TouchableOpacity>
         </View>
 
         <View style={styles.inputGroup}>
           <Text style={styles.label}>ร้าน</Text>
-          <TouchableOpacity style={styles.dropdown}>
-            <Text style={styles.dropdownText}>{vendor}</Text>
+          <TouchableOpacity style={styles.dropdown} onPress={() => setActiveDropdown("vendor")}>
+            <Text style={[styles.dropdownText, vendor !== "เลือกร้าน" && styles.dropdownTextActive]}>{vendor}</Text>
             <Ionicons name="chevron-down" size={20} color="#6B7280" />
           </TouchableOpacity>
         </View>
@@ -115,9 +158,7 @@ export default function OfficerInspectScreen() {
                 style={[styles.ratingBox, cleanliness === num && styles.ratingBoxSelected]}
                 onPress={() => setCleanliness(num)}
               >
-                <Text style={[styles.ratingText, cleanliness === num && styles.ratingTextSelected]}>
-                  {num}
-                </Text>
+                <Text style={[styles.ratingText, cleanliness === num && styles.ratingTextSelected]}>{num}</Text>
               </TouchableOpacity>
             ))}
           </View>
@@ -132,9 +173,7 @@ export default function OfficerInspectScreen() {
                 style={[styles.ratingBox, orderliness === num && styles.ratingBoxSelected]}
                 onPress={() => setOrderliness(num)}
               >
-                <Text style={[styles.ratingText, orderliness === num && styles.ratingTextSelected]}>
-                  {num}
-                </Text>
+                <Text style={[styles.ratingText, orderliness === num && styles.ratingTextSelected]}>{num}</Text>
               </TouchableOpacity>
             ))}
           </View>
@@ -189,6 +228,12 @@ export default function OfficerInspectScreen() {
         </TouchableOpacity>
 
       </ScrollView>
+
+      {/* RENDER MODALS */}
+      {renderDropdownModal("district", DISTRICT_OPTIONS, district, setDistrict)}
+      {renderDropdownModal("zone", ZONE_OPTIONS, zone, setZone)}
+      {renderDropdownModal("vendor", VENDOR_OPTIONS, vendor, setVendor)}
+
     </SafeAreaView>
   );
 }
@@ -212,7 +257,25 @@ const styles = StyleSheet.create({
     backgroundColor: "#FFFFFF", borderWidth: 1, borderColor: "#D1D5DB",
     borderRadius: 8, paddingHorizontal: 16, paddingVertical: 14,
   },
-  dropdownText: { fontSize: 14, color: "#4B5563" },
+  dropdownText: { fontSize: 14, color: "#9CA3AF" },
+  dropdownTextActive: { color: "#111827" }, // Changes color when a selection is made
+
+  // Modal Styles
+  modalOverlay: {
+    flex: 1, backgroundColor: "rgba(0, 0, 0, 0.5)", justifyContent: "flex-end",
+  },
+  modalContent: {
+    backgroundColor: "#FFFFFF", borderTopLeftRadius: 20, borderTopRightRadius: 20,
+    paddingVertical: 20, paddingHorizontal: 20, maxHeight: "50%",
+  },
+  modalTitle: { fontSize: 18, fontWeight: "bold", color: "#111827", marginBottom: 15, textAlign: "center" },
+  modalOption: {
+    flexDirection: "row", justifyContent: "space-between", alignItems: "center",
+    paddingVertical: 16, borderBottomWidth: 1, borderBottomColor: "#F3F4F6",
+  },
+  modalOptionSelected: { backgroundColor: "#F0FDF4", borderRadius: 8, paddingHorizontal: 10, borderBottomWidth: 0 },
+  modalOptionText: { fontSize: 16, color: "#374151" },
+  modalOptionTextSelected: { color: "#10B981", fontWeight: "bold" },
 
   // Rating 1-5 Styles
   ratingContainer: { flexDirection: "row", justifyContent: "space-between" },
