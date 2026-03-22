@@ -1,11 +1,11 @@
 import { Ionicons } from "@expo/vector-icons";
 import { Image } from "expo-image";
 import { useLocalSearchParams, useRouter } from "expo-router";
-import React, { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   ActivityIndicator,
+  Platform,
   Pressable,
-  SafeAreaView,
   ScrollView,
   StatusBar,
   StyleSheet,
@@ -28,29 +28,21 @@ type CheckinRow = {
   checkout_photo: string | null;
 };
 
+// Formats to "22 มี.ค. 69"
 function formatThaiDateFromIso(value: string) {
   const d = new Date(value);
   if (Number.isNaN(d.getTime())) return "";
   const months = [
-    "ม.ค.",
-    "ก.พ.",
-    "มี.ค.",
-    "เม.ย.",
-    "พ.ค.",
-    "มิ.ย.",
-    "ก.ค.",
-    "ส.ค.",
-    "ก.ย.",
-    "ต.ค.",
-    "พ.ย.",
-    "ธ.ค.",
+    "ม.ค.", "ก.พ.", "มี.ค.", "เม.ย.", "พ.ค.", "มิ.ย.",
+    "ก.ค.", "ส.ค.", "ก.ย.", "ต.ค.", "พ.ย.", "ธ.ค.",
   ];
   const day = d.getDate();
   const month = months[d.getMonth()] ?? "";
-  const yearBE = d.getFullYear() + 543;
-  return `${day} ${month} ${String(yearBE).slice(-2)}`;
+  const yearBE = String(d.getFullYear() + 543).slice(-2);
+  return `${day} ${month} ${yearBE}`;
 }
 
+// Formats to "HH:mm น."
 function formatTimeHHmm(value: string | null | undefined) {
   if (!value) return "—";
   const d = new Date(value);
@@ -83,46 +75,33 @@ export default function OfficerCheckinHistoryScreen() {
 
   useEffect(() => {
     let isMounted = true;
-
     (async () => {
       if (!vendorId) {
         setError("Missing vendorId");
         setLoading(false);
         return;
       }
-
       setLoading(true);
-      setError(null);
       try {
         const { data, error: fetchError } = await supabase
           .from("daily_checkins")
-          .select(
-            "id, checkin_time, checkout_time, checkin_photo, checkout_photo",
-          )
+          .select("id, checkin_time, checkout_time, checkin_photo, checkout_photo")
           .eq("vendor_id", vendorId)
           .order("checkin_time", { ascending: false })
           .limit(30);
 
         if (fetchError) throw fetchError;
-        if (!isMounted) return;
-        setRows((data as any) ?? []);
+        if (isMounted) setRows((data as any) ?? []);
       } catch (err: any) {
-        if (!isMounted) return;
-        setError(err?.message ?? "โหลดประวัติการเช็คอินไม่สำเร็จ");
+        if (isMounted) setError(err?.message ?? "โหลดประวัติไม่สำเร็จ");
       } finally {
-        if (!isMounted) return;
-        setLoading(false);
+        if (isMounted) setLoading(false);
       }
     })();
-
-    return () => {
-      isMounted = false;
-    };
+    return () => { isMounted = false; };
   }, [vendorId]);
 
-  const latestThumb = useMemo(() => {
-    return rows[0]?.checkin_photo ?? "";
-  }, [rows]);
+  const latestThumb = useMemo(() => rows[0]?.checkin_photo ?? null, [rows]);
 
   const grouped = useMemo(() => {
     const map = new Map<string, CheckinRow[]>();
@@ -134,339 +113,170 @@ export default function OfficerCheckinHistoryScreen() {
   }, [rows]);
 
   return (
-    <SafeAreaView style={styles.container}>
-      <StatusBar barStyle="dark-content" />
-
-      <View style={styles.headerRow}>
-        <Pressable
-          onPress={() => router.back()}
-          style={styles.backButton}
-          hitSlop={10}
-        >
-          <Ionicons name="chevron-back" size={28} color="#111827" />
-        </Pressable>
-        <Text style={styles.headerTitle}>ประวัติการเช็คอิน</Text>
-        <View style={styles.headerRight} />
+    <View style={styles.container}>
+      <StatusBar barStyle="dark-content" translucent backgroundColor="transparent" />
+      
+      {/* Scaled Down Header */}
+      <View style={styles.headerBlock}>
+        <View style={styles.headerRow}>
+          <Pressable onPress={() => router.back()} style={styles.backButton} hitSlop={10}>
+            <Ionicons name="chevron-back" size={24} color="#111827" />
+          </Pressable>
+          <Text style={styles.headerTitle}>ประวัติการเช็คอิน</Text>
+        </View>
       </View>
 
       {loading ? (
-        <View style={styles.center}>
-          <ActivityIndicator size="large" color="#F79432" />
-          <Text style={styles.centerText}>กำลังโหลด...</Text>
-        </View>
-      ) : error ? (
-        <View style={styles.center}>
-          <Text style={styles.errorTitle}>เกิดข้อผิดพลาด</Text>
-          <Text style={styles.errorText}>{error}</Text>
-        </View>
+        <View style={styles.center}><ActivityIndicator size="small" color="#64748B" /></View>
       ) : (
-        <ScrollView
-          showsVerticalScrollIndicator={false}
-          contentContainerStyle={styles.content}
-        >
+        <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.content}>
+          
+          {/* Compact Vendor Card with Thumbnail */}
           <View style={styles.vendorCard}>
-            <View style={styles.vendorThumb}>
+            <View style={styles.thumbContainer}>
               {latestThumb ? (
-                <Image
-                  source={{ uri: latestThumb }}
-                  style={styles.thumbImage}
-                  contentFit="cover"
-                />
+                <Image source={{ uri: latestThumb }} style={styles.thumb} contentFit="cover" />
               ) : (
-                <View style={[styles.thumbImage, styles.thumbPlaceholder]}>
-                  <Ionicons name="image-outline" size={22} color="#9CA3AF" />
+                <View style={styles.thumbPlaceholder}>
+                  <Ionicons name="image-outline" size={20} color="#94A3B8" />
                 </View>
               )}
             </View>
-            <View style={{ flex: 1 }}>
-              <Text style={styles.vendorTitle} numberOfLines={1}>
-                {shopName}
-              </Text>
-              {zoneName ? (
-                <View style={styles.vendorSubRow}>
-                  <Ionicons name="location-outline" size={16} color="#111827" />
-                  <Text style={styles.vendorSubText} numberOfLines={2}>
-                    {zoneName}
-                  </Text>
-                </View>
-              ) : null}
+            <View style={styles.vendorInfo}>
+              <Text style={styles.vendorName} numberOfLines={1}>{shopName}</Text>
+              <View style={styles.vendorLocRow}>
+                <Ionicons name="location" size={12} color="#64748B" />
+                <Text style={styles.vendorLocText} numberOfLines={1}>{zoneName}</Text>
+              </View>
             </View>
           </View>
 
+          {/* History Sections */}
           {grouped.map(([key, items]) => (
             <View key={key} style={styles.dayBlock}>
               <Text style={styles.dayTitle}>{formatThaiDateFromIso(key)}</Text>
               {items.map((row) => (
                 <View key={row.id} style={styles.dayCard}>
-                  <Pressable
-                    style={styles.photoCard}
-                    onPress={() =>
-                      setPhotoViewer({
-                        uri: row.checkin_photo,
-                        label: `เช็คอิน: ${formatTimeHHmm(row.checkin_time)}`,
-                      })
-                    }
+                  {/* Check-in */}
+                  <Pressable 
+                    style={styles.photoBox} 
+                    onPress={() => setPhotoViewer({ uri: row.checkin_photo, label: `เช็คอิน: ${formatTimeHHmm(row.checkin_time)}` })}
                   >
-                    <Image
-                      source={{ uri: row.checkin_photo }}
-                      style={styles.photo}
-                      contentFit="cover"
-                    />
-                    <View style={styles.photoLabelOverlay}>
-                      <Text style={styles.photoLabelText}>
-                        เช็คอิน: {formatTimeHHmm(row.checkin_time)}
-                      </Text>
-                    </View>
+                    <Image source={{ uri: row.checkin_photo }} style={styles.photo} contentFit="cover" />
+                    <View style={styles.photoLabel}><Text style={styles.photoLabelText}>เช็คอิน: {formatTimeHHmm(row.checkin_time)}</Text></View>
                   </Pressable>
-                  <Pressable
-                    style={styles.photoCard}
+                  
+                  {/* Check-out */}
+                  <Pressable 
+                    style={styles.photoBox} 
                     disabled={!row.checkout_photo}
-                    onPress={() =>
-                      row.checkout_photo
-                        ? setPhotoViewer({
-                            uri: row.checkout_photo,
-                            label: `เช็คเอาท์: ${formatTimeHHmm(row.checkout_time)}`,
-                          })
-                        : null
-                    }
+                    onPress={() => setPhotoViewer({ uri: row.checkout_photo!, label: `เช็คเอาท์: ${formatTimeHHmm(row.checkout_time)}` })}
                   >
                     {row.checkout_photo ? (
-                      <Image
-                        source={{ uri: row.checkout_photo }}
-                        style={styles.photo}
-                        contentFit="cover"
-                      />
+                      <>
+                        <Image source={{ uri: row.checkout_photo }} style={styles.photo} contentFit="cover" />
+                        <View style={styles.photoLabel}><Text style={styles.photoLabelText}>เช็คเอาท์: {formatTimeHHmm(row.checkout_time)}</Text></View>
+                      </>
                     ) : (
-                      <View style={[styles.photo, styles.photoPlaceholder]}>
-                        <Ionicons
-                          name="image-outline"
-                          size={24}
-                          color="#9CA3AF"
-                        />
-                        <Text style={styles.photoPlaceholderText}>
-                          ไม่มีรูป
-                        </Text>
+                      <View style={[styles.photo, styles.photoEmpty]}>
+                        <Text style={styles.photoEmptyText}>ไม่มีรูป</Text>
+                        <View style={styles.photoLabel}><Text style={styles.photoLabelText}>เช็คเอาท์: —</Text></View>
                       </View>
                     )}
-                    <View style={styles.photoLabelOverlay}>
-                      <Text style={styles.photoLabelText}>
-                        เช็คเอาท์: {formatTimeHHmm(row.checkout_time)}
-                      </Text>
-                    </View>
                   </Pressable>
                 </View>
               ))}
             </View>
           ))}
-
-          <View style={{ height: 30 }} />
+          <View style={{ height: 40 }} />
         </ScrollView>
       )}
 
-      {photoViewer ? (
-        <View style={styles.photoViewerRoot}>
-          <Pressable
-            style={styles.photoViewerBackdrop}
-            onPress={() => setPhotoViewer(null)}
-          />
-          <View style={styles.photoViewerCard}>
-            <Pressable
-              onPress={() => setPhotoViewer(null)}
-              style={styles.photoViewerClose}
-              hitSlop={10}
-            >
-              <Ionicons name="close" size={18} color="#111827" />
-            </Pressable>
-            <Image
-              source={{ uri: photoViewer.uri }}
-              style={styles.photoViewerImage}
-              contentFit="contain"
-            />
-            <View style={styles.photoViewerLabel}>
-              <Text style={styles.photoViewerLabelText}>
-                {photoViewer.label}
-              </Text>
-            </View>
+      {/* Full Screen Photo Viewer */}
+      {photoViewer && (
+        <View style={styles.viewerRoot}>
+          <Pressable style={styles.viewerBackdrop} onPress={() => setPhotoViewer(null)} />
+          <View style={styles.viewerCard}>
+            <Pressable onPress={() => setPhotoViewer(null)} style={styles.viewerClose}><Ionicons name="close" size={20} color="#111827" /></Pressable>
+            <Image source={{ uri: photoViewer.uri }} style={styles.viewerImage} contentFit="contain" />
+            <View style={styles.viewerInfo}><Text style={styles.viewerInfoText}>{photoViewer.label}</Text></View>
           </View>
         </View>
-      ) : null}
-    </SafeAreaView>
+      )}
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: "#F3F4F6" },
-  headerRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-    paddingHorizontal: 18,
-    paddingTop: 10,
-    paddingBottom: 6,
+  container: { flex: 1, backgroundColor: "#F8FAFC" },
+  
+  // Header scaled to 16
+  headerBlock: {
     backgroundColor: "white",
+    paddingTop: Platform.OS === 'android' ? 45 : 15,
+    paddingBottom: 8,
+    borderBottomWidth: 1,
+    borderBottomColor: '#F1F5F9',
   },
-  backButton: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  headerTitle: { fontSize: 22, fontWeight: "900", color: "#111827" },
-  headerRight: { width: 36, height: 36 },
+  headerRow: { flexDirection: "row", alignItems: "center", paddingHorizontal: 12, height: 44 },
+  backButton: { width: 32, height: 32, alignItems: "center", justifyContent: "center" },
+  headerTitle: { fontSize: 16, fontWeight: "700", color: "#000000", marginLeft: 4, fontFamily: "Anuphan-Bold", opacity: 1,},
 
-  center: {
-    flex: 1,
-    alignItems: "center",
-    justifyContent: "center",
-    padding: 20,
-  },
-  centerText: {
-    marginTop: 10,
-    fontSize: 14,
-    fontWeight: "700",
-    color: "#374151",
-  },
-  errorTitle: {
-    fontSize: 16,
-    fontWeight: "900",
-    color: "#991B1B",
-    marginBottom: 6,
-  },
-  errorText: { fontSize: 13, color: "#7F1D1D", textAlign: "center" },
+  content: { paddingHorizontal: 12, paddingTop: 12 },
 
-  content: { paddingHorizontal: 18, paddingTop: 16, paddingBottom: 20 },
+  // Compact Vendor Card
   vendorCard: {
     backgroundColor: "white",
-    borderRadius: 18,
-    padding: 14,
-    flexDirection: "row",
-    gap: 14,
-    alignItems: "center",
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 6 },
-    shadowOpacity: 0.06,
-    shadowRadius: 14,
-    elevation: 3,
-    marginBottom: 14,
-  },
-  vendorThumb: { width: 72, height: 72, borderRadius: 18, overflow: "hidden" },
-  thumbImage: { width: "100%", height: "100%" },
-  thumbPlaceholder: {
-    backgroundColor: "#F3F4F6",
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  vendorTitle: { fontSize: 26, fontWeight: "900", color: "#111827" },
-  vendorSubRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 8,
-    marginTop: 6,
-  },
-  vendorSubText: {
-    fontSize: 16,
-    fontWeight: "800",
-    color: "#111827",
-    opacity: 0.9,
-    flex: 1,
-  },
-
-  dayBlock: { marginTop: 6, marginBottom: 14 },
-  dayTitle: {
-    fontSize: 24,
-    fontWeight: "900",
-    color: "#111827",
-    marginBottom: 10,
-  },
-  dayCard: {
-    backgroundColor: "white",
-    borderRadius: 18,
-    padding: 12,
-    flexDirection: "row",
-    gap: 12,
-    marginBottom: 12,
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 6 },
-    shadowOpacity: 0.06,
-    shadowRadius: 14,
-    elevation: 2,
-  },
-  photoCard: { flex: 1, borderRadius: 16, overflow: "hidden" },
-  photo: { width: "100%", height: 150 },
-  photoPlaceholder: {
-    backgroundColor: "#F3F4F6",
-    alignItems: "center",
-    justifyContent: "center",
-    gap: 6,
-  },
-  photoPlaceholderText: { fontSize: 12, fontWeight: "800", color: "#9CA3AF" },
-  photoLabelOverlay: {
-    position: "absolute",
-    left: 10,
-    right: 10,
-    bottom: 10,
-    backgroundColor: "rgba(0,0,0,0.55)",
-    paddingVertical: 8,
-    paddingHorizontal: 10,
     borderRadius: 12,
+    padding: 10,
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 16,
+    borderWidth: 1,
+    borderColor: '#F1F5F9',
   },
-  photoLabelText: {
-    color: "white",
-    fontSize: 16,
-    fontWeight: "900",
-    textAlign: "center",
-  },
+  thumbContainer: { width: 52, height: 52, borderRadius: 8, overflow: 'hidden', backgroundColor: '#F1F5F9' },
+  thumb: { width: '100%', height: '100%' },
+  thumbPlaceholder: { flex: 1, alignItems: 'center', justifyContent: 'center' },
+  vendorInfo: { flex: 1, marginLeft: 12 },
+  vendorName: { fontSize: 16, fontWeight: "700", color: "#1e293b" },
+  vendorLocRow: { flexDirection: "row", alignItems: "center", gap: 4, marginTop: 2 },
+  vendorLocText: { fontSize: 12, color: "#64748B", fontWeight: "500" },
 
-  photoViewerRoot: {
-    ...StyleSheet.absoluteFillObject,
-    zIndex: 999,
-    elevation: 999,
-    alignItems: "center",
-    justifyContent: "center",
+  // History Grid
+  dayBlock: { marginBottom: 16 },
+  dayTitle: { fontSize: 15, fontWeight: "700", color: "#334155", marginBottom: 8 },
+  dayCard: { 
+    backgroundColor: "white", 
+    borderRadius: 12, 
+    padding: 8, 
+    flexDirection: "row", 
+    gap: 8,
+    marginBottom: 8,
+    borderWidth: 1,
+    borderColor: '#F1F5F9',
   },
-  photoViewerBackdrop: {
-    ...StyleSheet.absoluteFillObject,
-    backgroundColor: "rgba(0,0,0,0.65)",
-  },
-  photoViewerCard: {
-    width: "90%",
-    height: 520,
-    borderRadius: 22,
-    overflow: "hidden",
-    backgroundColor: "#111827",
-  },
-  photoViewerClose: {
+  photoBox: { flex: 1, borderRadius: 8, overflow: "hidden", backgroundColor: "#F1F5F9" },
+  photo: { width: "100%", height: 105 },
+  photoEmpty: { alignItems: "center", justifyContent: "center", height: 105 },
+  photoEmptyText: { fontSize: 11, color: "#94A3B8", fontWeight: "600" },
+  photoLabel: {
     position: "absolute",
-    top: 14,
-    right: 14,
-    zIndex: 2,
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    backgroundColor: "rgba(255,255,255,0.9)",
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  photoViewerImage: {
-    width: "100%",
-    height: "100%",
-    backgroundColor: "#111827",
-  },
-  photoViewerLabel: {
-    position: "absolute",
-    left: 14,
-    right: 14,
-    bottom: 14,
+    left: 4, right: 4, bottom: 4,
     backgroundColor: "rgba(0,0,0,0.55)",
-    paddingVertical: 10,
-    paddingHorizontal: 12,
-    borderRadius: 14,
+    paddingVertical: 4,
+    borderRadius: 4,
   },
-  photoViewerLabelText: {
-    color: "white",
-    fontSize: 18,
-    fontWeight: "900",
-    textAlign: "center",
-  },
+  photoLabelText: { color: "white", fontSize: 10, fontWeight: "700", textAlign: "center" },
+
+  center: { flex: 1, alignItems: "center", justifyContent: "center" },
+
+  // Viewer
+  viewerRoot: { ...StyleSheet.absoluteFillObject, zIndex: 1000, justifyContent: "center", alignItems: "center" },
+  viewerBackdrop: { ...StyleSheet.absoluteFillObject, backgroundColor: "rgba(0,0,0,0.85)" },
+  viewerCard: { width: "90%", height: "65%", backgroundColor: "black", borderRadius: 20, overflow: "hidden" },
+  viewerClose: { position: "absolute", top: 12, right: 12, zIndex: 10, backgroundColor: "white", borderRadius: 20, padding: 6 },
+  viewerImage: { width: "100%", height: "100%" },
+  viewerInfo: { position: "absolute", bottom: 15, left: 15, right: 15, backgroundColor: "rgba(0,0,0,0.7)", padding: 12, borderRadius: 10 },
+  viewerInfoText: { color: "white", fontSize: 14, fontWeight: "700", textAlign: "center" },
 });
