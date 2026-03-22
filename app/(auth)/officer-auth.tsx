@@ -153,11 +153,11 @@ const styles = StyleSheet.create({
   backButton: { padding: 4 },
   scrollContent: {
     flexGrow: 1,
-    justifyContent: "center",
+    justifyContent: "flex-start",
     paddingHorizontal: 24,
     paddingBottom: 80,
   },
-  formContainer: { width: "100%", marginTop: 20 },
+  formContainer: { width: "100%", marginTop: "50%" },
   inputWrapper: {
     flexDirection: "row",
     alignItems: "center",

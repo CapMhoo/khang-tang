@@ -1272,7 +1272,7 @@ const styles = StyleSheet.create({
     borderBottomLeftRadius: 20,
     borderBottomRightRadius: 20,
     elevation: 5,
-    paddingTop: Platform.OS === 'android' ? 45 : 15,
+    paddingTop: Platform.OS === 'android' ? 45 : 25,
   },
   headerBlock: {
     backgroundColor: "white",
@@ -1280,7 +1280,7 @@ const styles = StyleSheet.create({
     borderBottomLeftRadius: 20,
     borderBottomRightRadius: 20,
     elevation: 2,
-    paddingTop: Platform.OS === 'android' ? 45 : 15,
+    paddingTop: Platform.OS === 'android' ? 45 : 25,
   },
   headerRow: {
     flexDirection: "row",
@@ -1296,7 +1296,7 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
   },
-  headerTitle: { fontSize: 16, fontWeight: "900", color: "#111827", flex: 1},
+  headerTitle: { fontSize: 16, fontWeight: "900", color: "#111827", flex: 1, fontFamily: "Anuphan-Bold",},
   districtPill: {
     flexDirection: "row",
     alignItems: "center",
@@ -1314,6 +1314,7 @@ const styles = StyleSheet.create({
   tabPill: {
     flexDirection: "row",
     marginTop: 18,
+    marginBottom: 6,
     marginHorizontal: 16,
     backgroundColor: "#E9EEF5",
     borderRadius: 16,
@@ -1543,26 +1544,26 @@ statusPendingText: {
     backgroundColor: "rgba(17,24,39,0.35)",
   },
   storeSheet: {
-    position: "absolute",
-    left: 0,
-    right: 0,
-    bottom: 0,
-    // Change 0.62 to 0.68 to give the content more "breathing room" 
-    // and prevent the button from looking squashed at the bottom.
-    height: SCREEN_HEIGHT * 0.51, 
-    backgroundColor: "white",
-    // Change 26 to 32 for a smoother, more premium curve like the UI pic.
-    borderTopLeftRadius: 32, 
-    borderTopRightRadius: 32,
-    paddingTop: 8,
-    // Increase elevation for a stronger shadow on Android
-    elevation: 40, 
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: -10 },
-    shadowOpacity: 0.15,
-    shadowRadius: 20,
-  },
-
+      position: "absolute",
+      left: 0,
+      right: 0,
+      bottom: 0,
+      // FIX: Scaled height for iOS vs Android to fix "too long" look
+      // 0.51 on iPhone 15/16 Pro looks much more balanced than 0.6+
+      height: Platform.OS === 'ios' ? SCREEN_HEIGHT * 0.58 : SCREEN_HEIGHT * 0.51, 
+      backgroundColor: "white",
+      borderTopLeftRadius: 32, 
+      borderTopRightRadius: 32,
+      paddingTop: 8,
+      // Android Shadow
+      elevation: 40, 
+      // iOS Shadow
+      shadowColor: "#000",
+      shadowOffset: { width: 0, height: -10 },
+      shadowOpacity: 0.15,
+      shadowRadius: 20,
+    },
+    
   storeSheetBody: {
     flex: 1,
     paddingHorizontal: 16,

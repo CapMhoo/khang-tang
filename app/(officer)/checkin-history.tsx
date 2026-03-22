@@ -4,13 +4,12 @@ import { useLocalSearchParams, useRouter } from "expo-router";
 import { useEffect, useMemo, useState } from "react";
 import {
   ActivityIndicator,
-  Platform,
   Pressable,
   ScrollView,
   StatusBar,
   StyleSheet,
   Text,
-  View,
+  View
 } from "react-native";
 import { supabase } from "../../lib/supabase";
 
@@ -213,7 +212,7 @@ const styles = StyleSheet.create({
   // Header scaled to 16
   headerBlock: {
     backgroundColor: "white",
-    paddingTop: Platform.OS === 'android' ? 45 : 15,
+    paddingTop: 45,
     paddingBottom: 8,
     borderBottomWidth: 1,
     borderBottomColor: '#F1F5F9',
