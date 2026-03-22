@@ -1,13 +1,13 @@
-import { Ionicons, MaterialCommunityIcons } from "@expo/vector-icons";
+import { Ionicons } from "@expo/vector-icons";
 import { decode } from "base64-arraybuffer";
 import * as ImagePicker from "expo-image-picker";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import React, { useState } from "react";
 import {
-  ActivityIndicator,
   Alert,
+  Image,
   Modal,
-  SafeAreaView,
+  Platform,
   ScrollView,
   StatusBar,
   StyleSheet,
@@ -28,33 +28,84 @@ export default function VendorDashboard() {
   const [contractLoading, setContractLoading] = useState(true);
   const [shopName, setShopName] = useState("");
   const [contractData, setContractData] = useState<any>(null);
+  const [vendorName, setVendorName] = useState("");
+  const [todayCheckinData, setTodayCheckinData] = useState<{
+    time: string | null;
+    photo: string | null;
+  }>({ time: null, photo: null });
+  const [todayCheckoutData, setTodayCheckoutData] = useState<{
+    time: string | null;
+    photo: string | null;
+  }>({ time: null, photo: null });
+  const [contractStatus, setContractStatus] = useState<string | null>(null);
+
+  const formatThaiTime = (isoString: string | null | undefined) => {
+    if (!isoString) return "";
+
+    try {
+      const date = new Date(isoString);
+
+      // ตรวจสอบว่า Date ถูกต้องหรือไม่
+      if (isNaN(date.getTime())) return "";
+
+      return (
+        new Intl.DateTimeFormat("th-TH", {
+          hour: "2-digit",
+          minute: "2-digit",
+          hour12: false,
+          timeZone: "Asia/Bangkok",
+        }).format(date) + " น."
+      );
+    } catch (e) {
+      console.error("Error formatting time:", e);
+      return "";
+    }
+  };
+
+  const getThaiDate = () => {
+    const now = new Date();
+    const options: any = { day: "numeric", month: "short", year: "2-digit" };
+
+    // ใช้ 'th-TH' เพื่อให้เดือนเป็นภาษาไทย และใช้ปีพุทธศักราช
+    const formattedDate = new Intl.DateTimeFormat("th-TH", options).format(now);
+
+    return `วันนี้ ${formattedDate}`;
+  };
+
+  const fetchVendorName = async () => {
+    const { data, error } = await supabase
+      .from("vendors")
+      .select("first_name")
+      .eq("id", vendorId)
+      .single();
+    console.log("Vendor Name Data:", data, "Error:", error);
+    if (data) setVendorName(data.first_name);
+  };
 
   const checkContractStatus = async () => {
+    fetchVendorName();
     try {
       setContractLoading(true);
-      const today = new Date().toISOString().split("T")[0];
 
-      // ดึงข้อมูลพร้อม Join กับ zones เพื่อเอา district_name
+      // 1. Change the query to look for EITHER 'active' OR 'pending'
       const { data, error } = await supabase
         .from("contracts")
-        .select(
-          `
-        *,
-        zones (district_name)
-      `,
-        )
+        .select(`*, zones (district_name)`)
         .eq("vendor_id", vendorId)
-        .eq("status", "active")
-        .gte("end_date", today)
+        .in("status", ["active", "pending"]) // Check for both
         .order("created_at", { ascending: false })
         .maybeSingle();
 
       if (data) {
-        setHasActiveContract(true);
-        setContractData(data); // เก็บข้อมูลทั้งหมดไว้ใน state เดียว
+        // If it's active, they see the full dashboard
+        // If it's pending, they still see the "Empty" state but with a different banner
+        setHasActiveContract(data.status === "active");
+        setContractStatus(data.status); // Store 'pending' or 'active'
+        setContractData(data);
         setShopName(data.shop_name);
       } else {
         setHasActiveContract(false);
+        setContractStatus(null);
       }
     } catch (error) {
       console.error("Contract check error:", error);
@@ -72,25 +123,25 @@ export default function VendorDashboard() {
 
       const { data, error } = await supabase
         .from("daily_checkins")
-        .select("id, checkin_time, checkout_time") // ดึง checkout_time มาตรวจสอบด้วย
+        .select("checkin_time, checkout_time, checkin_photo, checkout_photo") // ✅ เพิ่ม checkout_photo
         .eq("vendor_id", vendorId)
         .gte("checkin_time", today.toISOString())
-        .maybeSingle(); // ใช้ maybeSingle แทน single เพื่อป้องกัน Error กรณีไม่พบข้อมูลเลย
+        .maybeSingle();
 
       if (data) {
-        // 1. ถ้ามีข้อมูลแถวของวันนี้ แสดงว่าเช็คอินแล้ว
         setIsCheckedIn(true);
+        setIsCheckedOut(!!data.checkout_time);
 
-        // 2. ถ้า checkout_time ไม่เป็น null แสดงว่าเช็คเอาท์แล้ว
-        if (data.checkout_time) {
-          setIsCheckedOut(true);
-        } else {
-          setIsCheckedOut(false);
-        }
-      } else {
-        // กรณีไม่พบข้อมูลเลย (ยังไม่ได้เริ่มเช็คอิน)
-        setIsCheckedIn(false);
-        setIsCheckedOut(false);
+        setTodayCheckinData({
+          time: data.checkin_time,
+          photo: data.checkin_photo,
+        });
+
+        // ✅ เก็บข้อมูลเช็คเอาท์ลง State
+        setTodayCheckoutData({
+          time: data.checkout_time,
+          photo: data.checkout_photo,
+        });
       }
     } catch (error) {
       console.log("Error checking status:", error);
@@ -153,11 +204,11 @@ export default function VendorDashboard() {
   const uploadCheckoutImage = async (photo: any) => {
     setUploading(true);
     try {
+      // ... โค้ด upload เดิมของคุณ ...
       const fileExt = photo.uri.split(".").pop();
       const fileName = `out_${vendorId}_${Date.now()}.${fileExt}`;
       const filePath = `vendor_checks/${fileName}`;
 
-      // 1. Upload รูป
       const { error: uploadError } = await supabase.storage
         .from("checkins")
         .upload(filePath, decode(photo.base64), {
@@ -170,21 +221,27 @@ export default function VendorDashboard() {
         data: { publicUrl },
       } = supabase.storage.from("checkins").getPublicUrl(filePath);
 
-      // 2. Update แถวของวันนี้ (หาแถวที่ยังไม่มี checkout_time)
+      const checkoutTimestamp = new Date().toISOString(); // ✅ สร้าง Timestamp
       const today = new Date();
       today.setHours(0, 0, 0, 0);
 
       const { error: dbError } = await supabase
         .from("daily_checkins")
         .update({
-          checkout_time: new Date().toISOString(),
+          checkout_time: checkoutTimestamp,
           checkout_photo: publicUrl,
         })
         .eq("vendor_id", vendorId)
         .gte("checkin_time", today.toISOString())
-        .is("checkout_time", null); // ป้องกันการทับข้อมูลเดิม
+        .is("checkout_time", null);
 
       if (dbError) throw dbError;
+
+      // ✅ อัปเดต State ทันทีเพื่อให้รูปโชว์
+      setTodayCheckoutData({
+        time: checkoutTimestamp,
+        photo: publicUrl,
+      });
 
       setIsCheckedOut(true);
       Alert.alert("สำเร็จ", "เช็คเอาท์เรียบร้อยแล้ว ขอบคุณที่ใช้บริการค่ะ!");
@@ -198,16 +255,12 @@ export default function VendorDashboard() {
   const uploadImage = async (photo: any) => {
     setUploading(true);
     try {
-      // 1. Get vendorId (Passed via router params or global state)
-      // Make sure this is a valid UUID string
       const currentUserId = vendorId;
-
-      // 2. Prepare Storage path
       const fileExt = photo.uri.split(".").pop();
       const fileName = `${currentUserId}_${Date.now()}.${fileExt}`;
       const filePath = `vendor_checks/${fileName}`;
 
-      // 3. Upload to Storage (Ensure 'anon' policy is set to INSERT for 'checkins' bucket)
+      // 1. Upload to Storage
       const { error: uploadError } = await supabase.storage
         .from("checkins")
         .upload(filePath, decode(photo.base64), {
@@ -216,332 +269,350 @@ export default function VendorDashboard() {
 
       if (uploadError) throw uploadError;
 
-      // 4. Get Public URL
       const {
         data: { publicUrl },
       } = supabase.storage.from("checkins").getPublicUrl(filePath);
 
-      // 5. INSERT into daily_checkins (Matches your SQL schema)
+      // 2. INSERT into daily_checkins
+      const checkinTimestamp = new Date().toISOString(); // สร้างเวลาไว้ใช้ร่วมกัน
       const { error: dbError } = await supabase.from("daily_checkins").insert({
         vendor_id: currentUserId,
-        checkin_time: new Date().toISOString(), // Sets the timestamp for now
+        checkin_time: checkinTimestamp,
         checkin_photo: publicUrl,
-        // checkout_time and checkout_photo stay null until they check out
       });
 
       if (dbError) throw dbError;
 
-      setIsCheckedIn(true); // เพิ่มบรรทัดนี้
-      Alert.alert("สำเร็จ", "เช็คอินและบันทึกข้อมูลเรียบร้อยแล้ว!");
+      // ✅ 3. อัปเดต State ทันทีเพื่อให้ UI แสดงผลรูปและเวลา
+      setContractData((prev: any) => ({
+        ...prev,
+        last_checkin_photo: publicUrl, // แมพให้ตรงกับ JSX ที่ใช้
+        checkin_time: checkinTimestamp,
+      }));
+
+      setTodayCheckinData({
+        time: checkinTimestamp,
+        photo: publicUrl,
+      });
+
+      setIsCheckedIn(true);
+      Alert.alert("สำเร็จ", "เช็คอินเรียบร้อยแล้ว!");
     } catch (error: any) {
       Alert.alert("Upload Error", error.message);
-      console.error(error);
     } finally {
       setUploading(false);
     }
   };
 
-  return (
-    <SafeAreaView style={styles.container}>
-      <StatusBar barStyle="light-content" />
+  if (!hasActiveContract && !contractLoading) {
+    return (
+      <View style={styles.container}>
+        <StatusBar
+          barStyle="dark-content"
+          translucent
+          backgroundColor="transparent"
+        />
 
-      {/* 1. Header Section */}
-      <View style={styles.header}>
-        <View style={styles.headerTop}>
-          <Text style={styles.brandText}>ข้างทาง</Text>
-          <View style={styles.headerIcons}>
-            <TouchableOpacity>
-              <Ionicons name="notifications-outline" size={24} color="white" />
-            </TouchableOpacity>
-            <TouchableOpacity
-              style={{ marginLeft: 15 }}
-              onPress={() => setShowMenu(true)}
-            >
-              <Ionicons name="settings-outline" size={24} color="white" />
-            </TouchableOpacity>
+        {/* Header with Greeting */}
+        <View style={styles.safeAreaTop}>
+          <View style={styles.headerTopSimple}>
+            <Text style={styles.headerTitleDark}>
+              สวัสดี {vendorName || "ลีออน"}
+            </Text>
+            <View style={styles.headerIcons}>
+              <TouchableOpacity style={styles.iconCircleSimple}>
+                <Ionicons name="notifications-outline" size={22} color="#333" />
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={styles.iconCircleSimple}
+                onPress={() => setShowMenu(true)}
+              >
+                <Ionicons name="settings-outline" size={22} color="#333" />
+              </TouchableOpacity>
+            </View>
           </View>
         </View>
 
-        {/* Profile Card / Contract Status */}
-        {contractLoading ? (
-          <View style={[styles.profileCard, { justifyContent: "center" }]}>
-            <ActivityIndicator color="white" />
-          </View>
-        ) : hasActiveContract ? (
-          /* กรณีมีสัญญา: โชว์ข้อมูลร้านแบบเดิม (แต่เปลี่ยนข้อมูลให้ดึงจาก DB จริง) */
-          <View style={styles.profileCard}>
-            <View style={styles.avatarContainer}>
-              <MaterialCommunityIcons
-                name="storefront"
-                size={30}
-                color="#FF9F43"
+        <ScrollView
+          style={styles.emptyContent}
+          showsVerticalScrollIndicator={false}
+        >
+          {/* Decorative Registration Card */}
+          <View style={styles.registrationBannerContainer}>
+            <TouchableOpacity
+              activeOpacity={0.9}
+              style={styles.registrationBannerButton}
+              onPress={() => {
+                // Prevent navigating back to form if already pending
+                if (contractStatus !== "pending") {
+                  router.push({
+                    pathname: "/contract-form",
+                    params: { vendorId },
+                  });
+                } else {
+                  Alert.alert(
+                    "อยู่ระหว่างตรวจสอบ",
+                    "คำขอของคุณกำลังได้รับการตรวจสอบโดยเจ้าหน้าที่",
+                  );
+                }
+              }}
+            >
+              <Image
+                source={
+                  contractStatus === "pending"
+                    ? require("../../assets/images/banner-bg-pending.png") // Your new photo
+                    : require("../../assets/images/banner-bg.png") // Original photo
+                }
+                style={styles.bannerImage}
+                resizeMode="cover"
               />
+            </TouchableOpacity>
+          </View>
+
+          {/* Steps Instruction Card */}
+          <View style={styles.stepsCard}>
+            <View style={styles.stepsHeader}>
+              <Text style={styles.stepsHeaderText}>
+                ขั้นตอนการขอรับใบอนุญาตฯ
+              </Text>
             </View>
-            <View style={styles.profileInfo}>
-              {/* 1. ชื่อร้านจากสัญญา */}
-              <Text style={styles.vendorName}>
-                {contractData?.shop_name || "ไม่ระบุชื่อร้าน"}
-              </Text>
+            <View style={styles.stepsBody}>
+              <View style={styles.stepRow}>
+                <View style={styles.stepDotContainer}>
+                  <View style={styles.greenDot} />
+                  <View style={styles.stepLine} />
+                </View>
+                <Text style={styles.stepText}>ส่งคำขอผ่านแอปฯ KhangTang</Text>
+              </View>
 
-              {/* 2. ประเภทสินค้าจากสัญญา */}
-              <Text style={styles.ownerName}>
-                ขาย: {contractData?.product_type || "-"}
-              </Text>
+              <View style={styles.stepRow}>
+                <View style={styles.stepDotContainer}>
+                  <View style={styles.greenDot} />
+                  <View style={styles.stepLine} />
+                </View>
+                <Text style={styles.stepText}>รอเจ้าหน้าที่ตรวจสอบข้อมูล</Text>
+              </View>
 
-              <View style={styles.locationRow}>
-                <Ionicons name="location-sharp" size={14} color="white" />
-                {/* 3. ดึงชื่อโซนที่ Join มา และแสดงรายละเอียดจาก jsonb location (ถ้ามี) */}
-                <Text style={styles.locationText}>
-                  {` ${contractData?.zones?.district_name || "ไม่ระบุโซน"}`}
+              <View style={styles.stepRow}>
+                <View style={styles.stepDotContainer}>
+                  <View style={styles.greenDot} />
+                </View>
+                <Text style={styles.stepText}>
+                  เจ้าหน้าที่อนุมัติคำขอและออกใบอนุญาตฯ
                 </Text>
               </View>
             </View>
+          </View>
+        </ScrollView>
 
-            {/* 4. สถานะสัญญาจากฐานข้อมูล */}
-            <View
-              style={[
-                styles.statusBadge,
-                {
-                  backgroundColor:
-                    contractData?.status === "active"
-                      ? "rgba(76, 217, 100, 0.2)"
-                      : "rgba(255, 59, 48, 0.2)",
-                },
-              ]}
-            >
-              <Ionicons
-                name={
-                  contractData?.status === "active"
-                    ? "checkmark-circle"
-                    : "alert-circle"
-                }
-                size={14}
-                color={
-                  contractData?.status === "active" ? "#4CD964" : "#FF3B30"
-                }
-              />
-              <Text
-                style={[
-                  styles.statusBadgeText,
-                  {
-                    color:
-                      contractData?.status === "active" ? "#4CD964" : "#FF3B30",
-                  },
-                ]}
+        {/* Chatbot Floating Button */}
+        <TouchableOpacity style={styles.chatBotButton}>
+          <Text style={styles.chatBotText}>AI{"\n"}Chat bot</Text>
+        </TouchableOpacity>
+
+        <Modal
+          transparent={true}
+          visible={showMenu}
+          animationType="fade"
+          onRequestClose={() => setShowMenu(false)}
+        >
+          <TouchableOpacity
+            style={styles.modalOverlay}
+            activeOpacity={1}
+            onPress={() => setShowMenu(false)}
+          >
+            <View style={styles.dropdownMenu}>
+              <TouchableOpacity
+                style={styles.menuOption}
+                onPress={() => {
+                  setShowMenu(false);
+                  router.replace("/vendor-auth");
+                }}
               >
-                {contractData?.status === "active"
-                  ? " อนุมัติแล้ว"
-                  : " รอตรวจสอบ"}
-              </Text>
+                <Ionicons name="log-out-outline" size={20} color="#FF3B30" />
+                <Text style={styles.logoutText}>ออกจากระบบ</Text>
+              </TouchableOpacity>
+            </View>
+          </TouchableOpacity>
+        </Modal>
+      </View>
+    );
+  }
+
+  // ตามด้วย return ( เดิมของคุณ...
+  return (
+    <View style={styles.container}>
+      <StatusBar
+        barStyle="light-content"
+        translucent
+        backgroundColor="transparent"
+      />
+
+      {/* 1. Header Section - Dark Slate Blue */}
+      <View style={styles.header}>
+        {/* ใช้ View เปล่าที่มีความสูงเท่ากับ StatusBar หรือใช้ SafeAreaView แค่ส่วนนี้ */}
+        <View style={styles.safeAreaTop}>
+          <View style={styles.headerTop}>
+            <Text style={styles.headerTitle}>
+              สวัสดี {vendorName || "ผู้ประกอบการ"}
+            </Text>
+            <View style={styles.headerIcons}>
+              <TouchableOpacity style={styles.iconCircle}>
+                <Ionicons name="notifications" size={20} color="#333" />
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={styles.iconCircle}
+                onPress={() => setShowMenu(true)}
+              >
+                <Ionicons name="settings-sharp" size={20} color="#333" />
+              </TouchableOpacity>
             </View>
           </View>
-        ) : (
-          /* กรณีไม่มีสัญญา: โชว์ปุ่มลงทะเบียนที่ดูเด่นสะดุดตา */
-          <View style={styles.noContractCard}>
-            <View style={styles.warningIconContainer}>
-              <Ionicons name="alert-circle" size={40} color="#FF3B30" />
-            </View>
-
-            <View style={styles.profileInfo}>
-              <Text style={[styles.vendorName, { color: "#FF3B30" }]}>
-                ยังไม่มีสัญญาค้าขาย
-              </Text>
+        </View>
+        {/* Shop Info Card - Floating Style */}
+        <View style={styles.shopCard}>
+          <View style={styles.shopImageContainer}>
+            <Image
+              source={{
+                uri:
+                  contractData?.shop_image ||
+                  "https://images.unsplash.com/photo-1555126634-323283e090fa?q=80&w=200",
+              }}
+              style={styles.shopImage}
+            />
+          </View>
+          <View style={styles.shopDetail}>
+            <Text style={styles.shopNameText}>
+              {contractData?.shop_name || "กำลังโหลด..."}
+            </Text>
+            <View style={styles.locationRow}>
+              <Ionicons name="location-sharp" size={14} color="#666" />
               <Text style={styles.locationText}>
-                กรุณาลงทะเบียนเพื่อเริ่มใช้งานระบบ
+                {contractData?.zones?.district_name || "พญาไท"}
               </Text>
             </View>
 
-            {/* ปุ่มลงทะเบียนแยกเฉพาะจุด */}
-            <TouchableOpacity
-              style={styles.actionBtn}
-              onPress={() =>
-                router.replace({
-                  pathname: "/contract-form",
-                  params: { vendorId: vendorId }, // Pass the ID here
-                })
-              } // ไปที่หน้าฟอร์มใหม่
-            >
-              <Text style={styles.actionBtnText}>ลงทะเบียน</Text>
-            </TouchableOpacity>
+            {/* Badge based on your contract status logic */}
+            {hasActiveContract && (
+              <View style={styles.approvedBadge}>
+                <View style={styles.checkCircle}>
+                  <Ionicons name="checkmark" size={10} color="#4CD964" />
+                </View>
+                <Text style={styles.approvedText}>อนุมัติร้านค้าแล้ว</Text>
+              </View>
+            )}
           </View>
-        )}
+        </View>
       </View>
 
       <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
-        {/* สร้าง View ครอบส่วนเนื้อหาทั้งหมดที่ต้องการล็อค */}
-        <View
-          pointerEvents={hasActiveContract ? "auto" : "none"} // ถ้าไม่มีสัญญา จะกดอะไรไม่ได้เลย
-          style={!hasActiveContract && { opacity: 0.4 }} // ถ้าไม่มีสัญญา จะทำให้ดูจางลง
-        >
-          {/* 2. Today's Status Section */}
-          <View style={styles.sectionCard}>
-            <View style={styles.sectionHeader}>
-              <View>
-                <Text style={styles.sectionTitle}>สถานะวันนี้</Text>
-                <Text style={styles.sectionSubtitle}>
-                  <Ionicons name="time-outline" /> 10:00 - 20:00
-                </Text>
-              </View>
-
-              {/* ส่วนที่เปลี่ยนตามสถานะ */}
-              <View
-                style={[
-                  styles.checkInStatus,
-                  isCheckedIn &&
-                    !isCheckedOut && { backgroundColor: "#E8F5E9" },
-                  isCheckedOut && { backgroundColor: "#FFEBEE" }, // สีแดงอ่อนเมื่อเช็คเอาท์
-                ]}
-              >
-                <Text
-                  style={[
-                    styles.checkInStatusText,
-                    isCheckedIn && !isCheckedOut && { color: "#4CAF50" },
-                    isCheckedOut && { color: "#FF3B30" },
-                  ]}
-                >
-                  {isCheckedOut
-                    ? "เลิกขายแล้ว"
-                    : isCheckedIn
-                      ? "กำลังขาย"
-                      : "ยังไม่เช็คอิน"}
-                </Text>
-              </View>
-            </View>
-
-            <View style={styles.buttonRow}>
-              {/* Check-In Button */}
-              <TouchableOpacity
-                style={[
-                  styles.checkInButton,
-                  (uploading || isCheckedIn) && {
-                    backgroundColor: "#A0A0A0",
-                    opacity: 0.7,
-                  }, // เทาเมื่อเช็คอินแล้ว
-                ]}
-                onPress={handleCheckIn}
-                disabled={uploading || isCheckedIn} // ปิดปุ่มถ้าเช็คอินแล้ว
-              >
-                <Ionicons name="camera-outline" size={32} color="white" />
-                <Text style={styles.buttonTextBold}>
-                  {isCheckedIn
-                    ? "เช็คอินแล้ว"
-                    : uploading
-                      ? "กำลัง..."
-                      : "เช็คอิน"}
-                </Text>
-                <Text style={styles.buttonSubText}>ถ่ายรูปพื้นที่</Text>
-              </TouchableOpacity>
-
-              {/* Check-Out Button */}
-              <TouchableOpacity
-                style={[
-                  styles.checkOutButton,
-                  (!isCheckedIn || isCheckedOut) && { opacity: 0.5 }, // จางถ้ายังไม่เช็คอิน หรือเช็คเอาท์ไปแล้ว
-                  isCheckedIn &&
-                    !isCheckedOut && { backgroundColor: "#FF3B30" }, // แดงเด่นเมื่อพร้อมให้เช็คเอาท์
-                ]}
-                onPress={handleCheckOut}
-                disabled={uploading || !isCheckedIn || isCheckedOut} // กดได้เฉพาะตอนเช็คอินแล้วแต่ยังไม่เช็คเอาท์
-              >
-                <Ionicons
-                  name="close-circle-outline"
-                  size={32}
-                  color={isCheckedIn && !isCheckedOut ? "white" : "#A0A0A0"}
+        {/* 2. Trading Hours Section */}
+        <View style={styles.sectionCard}>
+          <Text style={styles.sectionTitle}>เวลาทำการค้า</Text>
+          <View style={styles.timeRow}>
+            <Ionicons name="time-outline" size={18} color="#333" />
+            <Text style={styles.timeText}> 09:00-17:00 น.</Text>
+          </View>
+          <Text style={styles.dateLabelText}>{getThaiDate()}</Text>
+          <View style={styles.checkInRow}>
+            {/* Your Check-in Button Logic */}
+            <TouchableOpacity
+              style={[styles.cameraBox, isCheckedIn && styles.cameraBoxFilled]}
+              onPress={handleCheckIn}
+              disabled={isCheckedIn || uploading}
+            >
+              {isCheckedIn ? (
+                <Image
+                  key={todayCheckinData.photo} // บังคับให้โหลดใหม่เมื่อ URL เปลี่ยน
+                  source={{ uri: todayCheckinData.photo ?? "" }}
+                  style={styles.capturedImage}
                 />
-                <Text
-                  style={[
-                    styles.buttonTextBold,
-                    {
-                      color: isCheckedIn && !isCheckedOut ? "white" : "#A0A0A0",
-                    },
-                  ]}
-                >
-                  เช็คเอาท์
-                </Text>
-                <Text
-                  style={[
-                    styles.buttonSubText,
-                    {
-                      color: isCheckedIn && !isCheckedOut ? "white" : "#A0A0A0",
-                    },
-                  ]}
-                >
-                  เลิกขาย
-                </Text>
-              </TouchableOpacity>
-            </View>
-          </View>
+              ) : (
+                <>
+                  <Ionicons name="camera" size={30} color="#333" />
+                  <Text style={styles.cameraLabel}>เช็คอิน</Text>
+                  <Text style={styles.cameraSubLabel}>ถ่ายรูปพื้นที่</Text>
+                </>
+              )}
+              {isCheckedIn && (
+                <View style={styles.timeOverlay}>
+                  <Text style={styles.overlayText}>
+                    เช็คอิน: {formatThaiTime(todayCheckinData.time || "")}{" "}
+                  </Text>
+                </View>
+              )}
+            </TouchableOpacity>
 
-          {/* 3. Menu List */}
-          <TouchableOpacity
-            style={styles.menuItem}
-            onPress={() => router.push("/zone-map")}
-          >
-            <View
-              style={[styles.menuIconContainer, { backgroundColor: "#FFF4E5" }]}
+            {/* Your Check-out Button Logic */}
+            {/* ปุ่มเช็คเอาท์ */}
+            <TouchableOpacity
+              style={[
+                styles.cameraBoxDashed,
+                isCheckedOut && styles.cameraBoxFilled, // ✅ ใช้สไตล์เดียวกับเช็คอินถ้ามีรูปแล้ว
+              ]}
+              onPress={handleCheckOut}
+              disabled={!isCheckedIn || isCheckedOut || uploading}
             >
-              <Ionicons name="location" size={20} color="#FF9F43" />
-            </View>
-            <View style={styles.menuTextContainer}>
-              <Text>ดูแผนที่โซนค้าขาย</Text>
-              <Text style={styles.menuSubtitle}>ค้นหาและจองพื้นที่ใหม่</Text>
-            </View>
-            <Ionicons name="chevron-forward" size={20} color="#C7C7CC" />
-          </TouchableOpacity>
+              {isCheckedOut && todayCheckoutData.photo ? (
+                <Image
+                  key={todayCheckoutData.photo}
+                  source={{ uri: todayCheckoutData.photo }}
+                  style={styles.capturedImage}
+                />
+              ) : (
+                <>
+                  <Ionicons
+                    name="camera"
+                    size={30}
+                    color={!isCheckedIn || isCheckedOut ? "#A0AAB8" : "#333"}
+                  />
+                  <Text
+                    style={[
+                      styles.cameraLabel,
+                      isCheckedOut && { color: "#333" },
+                    ]}
+                  >
+                    เช็คเอาท์
+                  </Text>
+                  <Text style={styles.cameraSubLabel}>ถ่ายรูปพื้นที่</Text>
+                </>
+              )}
 
-          <TouchableOpacity
-            style={styles.menuItem}
-            onPress={() =>
-              router.replace({
-                pathname: "/history",
-                params: { vendorId: vendorId }, // Pass the ID here
-              })
-            }
-          >
-            <View
-              style={[styles.menuIconContainer, { backgroundColor: "#E0F7F9" }]}
-            >
-              <Ionicons name="calendar" size={20} color="#26C6DA" />
-            </View>
-            <View style={styles.menuTextContainer}>
-              <Text style={styles.menuTitle}>ประวัติการเช็คอิน</Text>
-              <Text style={styles.menuSubtitle}>ดูบันทึกการทำงาน</Text>
-            </View>
-            <Ionicons name="chevron-forward" size={20} color="#C7C7CC" />
-          </TouchableOpacity>
-
-          {/* 4. Stats Row */}
-          <View style={styles.statsRow}>
-            <View style={styles.statBox}>
-              <Text style={styles.statValue}>28</Text>
-              <Text style={styles.statLabel}>วันเช็คอินเดือนนี้</Text>
-            </View>
-            <View style={styles.statBox}>
-              <Text style={[styles.statValue, { color: "#00C853" }]}>100%</Text>
-              <Text style={styles.statLabel}>อัตราการปฏิบัติตาม</Text>
-            </View>
-          </View>
-
-          {/* 5. Weekly Schedule */}
-          <View style={styles.sectionCard}>
-            <Text style={styles.sectionTitle}>กำหนดการสัปดาห์นี้</Text>
-            <View style={styles.scheduleItem}>
-              <Text style={styles.dayText}>จ.</Text>
-              <View style={styles.progressBarContainer}>
-                <View style={styles.progressBarFill} />
-              </View>
-              <Text style={styles.timeText}>10:00 - 20:00</Text>
-            </View>
+              {isCheckedOut && todayCheckoutData.time && (
+                <View style={styles.timeOverlay}>
+                  <Text style={styles.overlayText}>
+                    เช็คเอาท์: {formatThaiTime(todayCheckoutData.time)}
+                  </Text>
+                </View>
+              )}
+            </TouchableOpacity>
           </View>
         </View>
-        {!hasActiveContract && !contractLoading && (
-          <View style={styles.lockOverlayTextContainer}>
-            <Ionicons name="lock-closed" size={30} color="#666" />
-            <Text style={styles.lockText}>
-              กรุณาทำสัญญาค้าขายเพื่อเปิดใช้งานระบบ
-            </Text>
+
+        {/* 3. Score Section */}
+        <View style={styles.sectionCard}>
+          <Text style={styles.scoreTitle}>
+            คะแนนความสะอาดและการปฏิบัติตามกฎระเบียบ
+          </Text>
+          <View style={styles.scoreContainer}>
+            <View style={styles.progressCircle}>
+              <Text style={styles.scoreValue}>100</Text>
+              <Text style={styles.scoreUnit}>คะแนน</Text>
+            </View>
           </View>
-        )}
+          <View style={styles.grayBar} />
+        </View>
+
+        {/* 4. History Link */}
+        <TouchableOpacity
+          style={styles.historyButton}
+          onPress={() =>
+            router.push({ pathname: "/history", params: { vendorId } })
+          }
+        >
+          <Text style={styles.historyText}>ประวัติการเช็คอิน</Text>
+          <Ionicons name="chevron-forward" size={20} color="#000" />
+        </TouchableOpacity>
       </ScrollView>
       <Modal
         transparent={true}
@@ -568,14 +639,234 @@ export default function VendorDashboard() {
           </View>
         </TouchableOpacity>
       </Modal>
-    </SafeAreaView>
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
+  pendingOverlay: {
+    backgroundColor: "rgba(0,0,0,0.4)",
+    padding: 10,
+    borderRadius: 10,
+  },
+  pendingText: {
+    color: "white",
+    fontWeight: "bold",
+    fontSize: 16,
+    fontFamily: "Anuphan-Bold", // Using your project font if available
+  },
+  container: {
+    flex: 1,
+    backgroundColor: "#F8F9FA",
+  },
+  emptyContent: {
+    flex: 1,
+    paddingHorizontal: 20,
+  },
+  registrationBannerContainer: {
+    height: 260, // Fixed height for the banner area
+    borderRadius: 20,
+    overflow: "hidden", // Ensures the image corners are rounded
+    marginBottom: 20,
+    elevation: 5, // Shadow for Android
+    shadowColor: "#000", // Shadow for iOS
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.1,
+    shadowRadius: 10,
+  },
+  registrationBannerButton: {
+    flex: 1, // Fill the container
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  bannerImage: {
+    ...StyleSheet.absoluteFillObject, // Makes image fill the entire button area
+    width: "100%",
+    height: "100%",
+  },
+  whiteRegisterButtonLabel: {
+    flexDirection: "row",
+    backgroundColor: "white",
+    paddingVertical: 12,
+    paddingHorizontal: 20,
+    borderRadius: 15,
+    alignItems: "center",
+    // Make sure it sits above the image
+    zIndex: 1,
+  },
+  whiteRegisterButtonText: {
+    fontSize: 18,
+    fontWeight: "bold",
+    color: "#000",
+    marginRight: 8,
+  },
+  headerTopSimple: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    paddingHorizontal: 20,
+    paddingBottom: 15,
+  },
+  headerTitleDark: {
+    fontSize: 20,
+    fontWeight: "bold",
+    color: "#000",
+  },
+  iconCircleSimple: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: "#F0F0F0",
+    justifyContent: "center",
+    alignItems: "center",
+    marginLeft: 10,
+  },
+  registrationBanner: {
+    height: 220,
+    borderRadius: 20,
+    overflow: "hidden",
+    justifyContent: "center",
+    alignItems: "center",
+    marginBottom: 20,
+  },
+
+  whiteRegisterButton: {
+    flexDirection: "row",
+    backgroundColor: "white",
+    paddingVertical: 14,
+    paddingHorizontal: 20,
+    borderRadius: 15,
+    alignItems: "center",
+    shadowColor: "#000",
+    shadowOpacity: 0.1,
+    shadowRadius: 10,
+    elevation: 5,
+  },
+
+  stepsCard: {
+    backgroundColor: "white",
+    borderRadius: 20,
+    overflow: "hidden",
+    elevation: 3,
+    shadowColor: "#000",
+    shadowOpacity: 0.05,
+    shadowRadius: 10,
+  },
+  stepsHeader: {
+    backgroundColor: "#00875A", // Green from the photo
+    paddingVertical: 12,
+    alignItems: "center",
+  },
+  stepsHeaderText: {
+    color: "white",
+    fontSize: 16,
+    fontWeight: "bold",
+  },
+  stepsBody: {
+    padding: 20,
+  },
+  stepRow: {
+    flexDirection: "row",
+    minHeight: 50,
+  },
+  stepDotContainer: {
+    alignItems: "center",
+    marginRight: 15,
+    width: 20,
+  },
+  greenDot: {
+    width: 12,
+    height: 12,
+    borderRadius: 6,
+    backgroundColor: "#28a745",
+    zIndex: 1,
+  },
+  stepLine: {
+    width: 2,
+    flex: 1,
+    backgroundColor: "#D1D5DB",
+    marginVertical: 2,
+  },
+  stepText: {
+    fontSize: 16,
+    color: "#374151",
+    flex: 1,
+    paddingBottom: 20,
+  },
+  chatBotButton: {
+    position: "absolute",
+    bottom: 30,
+    right: 20,
+    width: 70,
+    height: 70,
+    borderRadius: 35,
+    backgroundColor: "#546E7A",
+    justifyContent: "center",
+    alignItems: "center",
+    elevation: 5,
+  },
+  chatBotText: {
+    color: "white",
+    fontSize: 12,
+    textAlign: "center",
+    fontWeight: "bold",
+  },
+  header: {
+    backgroundColor: "#707E94",
+    paddingHorizontal: 20,
+    // ไม่ต้องมี paddingTop เยอะ เพราะเราใช้ SafeAreaView ภายในคุมระยะไว้แล้ว
+    paddingBottom: 40,
+  },
+  headerTop: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    marginTop: 10, // ปรับระยะห่างจากขอบบนหลังจากพ้น Safe Area มาแล้ว
+    marginBottom: 20,
+  },
+  content: {
+    flex: 1,
+    // ใช้ค่าติดลบเพื่อให้ Card ร้านค้าลอยทับส่วน Header เล็กน้อยตามดีไซน์เดิม
+    marginTop: -25,
+    paddingHorizontal: 20,
+  },
+  emptyContainer: {
+    flex: 1,
+    paddingHorizontal: 20,
+    justifyContent: "center", // จัดให้อยู่กลางจอ
+    marginTop: -40, // ขยับขึ้นไปทับส่วน Header ที่เหลือเล็กน้อย
+  },
+  emptyCard: {
+    backgroundColor: "#E0E0E0", // สีเทาอ่อนตามรูป
+    height: 350,
+    borderRadius: 20,
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  registerButton: {
+    backgroundColor: "white",
+    paddingVertical: 12,
+    paddingHorizontal: 25,
+    borderRadius: 10,
+    elevation: 2,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+  },
+  registerButtonText: {
+    fontSize: 18,
+    fontWeight: "bold",
+    color: "#000",
+  },
   modalOverlay: {
     flex: 1,
     backgroundColor: "transparent", // หรือ 'rgba(0,0,0,0.1)' ถ้าอยากให้ฉากหลังมืดลงนิดนึง
+  },
+  safeAreaTop: {
+    // สำหรับ iOS เราจะใช้ค่าประมาณ 44-47 (หรือใช้คลังแสงจริงถ้าลง safe-area-context)
+    // สำหรับ Android ใช้ StatusBar.currentHeight
+    paddingTop: Platform.OS === "ios" ? 50 : StatusBar.currentHeight,
   },
   dropdownMenu: {
     position: "absolute",
@@ -604,217 +895,163 @@ const styles = StyleSheet.create({
     color: "#FF3B30", // สีแดงเพื่อให้สื่อถึงการ Logout
     fontWeight: "500",
   },
-  container: { flex: 1, backgroundColor: "#F8F9FA" },
-  header: {
-    backgroundColor: "#FF9F43",
-    paddingHorizontal: 20,
-    paddingBottom: 30,
-    borderBottomLeftRadius: 30,
-    borderBottomRightRadius: 30,
+  cameraBoxFilled: {
+    padding: 0, // เอา padding ออกเพื่อให้รูปเต็มพื้นที่
+    overflow: "hidden",
+    borderWidth: 0,
   },
-  headerTop: {
-    flexDirection: "row",
-    justifyContent: "space-between",
+  capturedImage: {
+    width: "100%",
+    height: "100%",
+    borderRadius: 15,
+  },
+  timeOverlay: {
+    position: "absolute",
+    bottom: 0,
+    left: 0,
+    right: 0,
+    backgroundColor: "rgba(0, 0, 0, 0.5)", // แถบสีดำจางๆ
+    paddingVertical: 5,
     alignItems: "center",
-    marginTop: 10,
-    marginBottom: 20,
   },
-  brandText: { fontSize: 22, fontWeight: "bold", color: "white" },
+  overlayText: {
+    color: "white",
+    fontSize: 12,
+    fontWeight: "bold",
+  },
+  headerTitle: { fontSize: 20, fontWeight: "bold", color: "white" },
   headerIcons: { flexDirection: "row" },
-  profileCard: { flexDirection: "row", alignItems: "center" },
-  avatarContainer: {
-    width: 60,
-    height: 60,
-    borderRadius: 30,
-    backgroundColor: "#FFEBD2",
+  iconCircle: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: "rgba(255,255,255,0.8)",
     justifyContent: "center",
     alignItems: "center",
+    marginLeft: 10,
   },
-  profileInfo: { flex: 1, marginLeft: 15 },
-  vendorName: { fontSize: 20, fontWeight: "bold", color: "white" },
-  ownerName: { fontSize: 14, color: "rgba(255,255,255,0.8)" },
-  locationRow: { flexDirection: "row", alignItems: "center", marginTop: 4 },
-  locationText: { fontSize: 12, color: "white" },
-  statusBadge: {
-    backgroundColor: "rgba(255,255,255,0.3)",
+  shopCard: {
+    backgroundColor: "white",
+    borderRadius: 18,
+    padding: 15,
     flexDirection: "row",
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: 12,
-    position: "absolute",
-    right: 0,
-    top: 10,
+    alignItems: "center",
+    elevation: 4,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.1,
+    shadowRadius: 8,
   },
-  statusBadgeText: { fontSize: 10, color: "#4CD964", fontWeight: "bold" },
-  content: { flex: 1, paddingHorizontal: 20, marginTop: -20 },
+  shopImageContainer: {
+    width: 70,
+    height: 70,
+    borderRadius: 12,
+    overflow: "hidden",
+  },
+  shopImage: { width: "100%", height: "100%" },
+  shopDetail: { flex: 1, marginLeft: 15 },
+  shopNameText: { fontSize: 18, fontWeight: "bold", color: "#000" },
+  locationRow: { flexDirection: "row", alignItems: "center", marginTop: 4 },
+  locationText: { fontSize: 13, color: "#666", marginLeft: 4 },
+  approvedBadge: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "#F2FBF2",
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 20,
+    marginTop: 8,
+    alignSelf: "flex-start",
+  },
+  approvedText: { fontSize: 12, color: "#4CD964", fontWeight: "600" },
+  checkCircle: {
+    width: 16,
+    height: 16,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: "#4CD964",
+    justifyContent: "center",
+    alignItems: "center",
+    marginRight: 5,
+  },
   sectionCard: {
     backgroundColor: "white",
     borderRadius: 20,
     padding: 20,
-    marginBottom: 15,
-    elevation: 2,
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-  },
-  sectionHeader: {
-    flexDirection: "row",
-    justifyContent: "space-between",
     marginBottom: 20,
   },
-  sectionTitle: { fontSize: 18, fontWeight: "bold", color: "#333" },
-  sectionSubtitle: { fontSize: 14, color: "#666", marginTop: 5 },
-  checkInStatus: {
-    backgroundColor: "#EFEFEF",
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 15,
-  },
-  checkInStatusText: { fontSize: 12, color: "#888" },
-  buttonRow: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    gap: 15, // Creates consistent space between buttons
-    width: "100%",
-  },
-  checkInButton: {
-    flex: 1, // Take up half the row
-    backgroundColor: "#F79432",
-    height: 140,
-    borderRadius: 15,
-    justifyContent: "center",
-    alignItems: "center",
-    padding: 10,
-    // Shadow
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.1,
-    shadowRadius: 8,
-    elevation: 5,
-  },
-  checkOutButton: {
-    flex: 1, // Take up half the row
-    backgroundColor: "#F5F5F5",
-    height: 140,
-    borderRadius: 15,
-    justifyContent: "center",
-    alignItems: "center",
-    padding: 10,
-    // Shadow
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.05,
-    shadowRadius: 8,
-    elevation: 2,
-  },
-  buttonTextBold: {
-    color: "#FFFFFF",
-    fontSize: 18, // Slightly smaller to ensure no text wrapping
+  sectionTitle: {
+    fontSize: 18,
     fontWeight: "bold",
-    marginTop: 8,
-  },
-  buttonSubText: {
-    color: "#FFFFFF",
-    fontSize: 12,
-    opacity: 0.9,
-    marginTop: 2,
-  },
-  buttonTextSmall: { fontSize: 12, color: "white", opacity: 0.9 },
-  menuItem: {
-    backgroundColor: "white",
-    borderRadius: 15,
-    padding: 15,
-    flexDirection: "row",
-    alignItems: "center",
+    color: "#000",
     marginBottom: 10,
   },
-  menuIconContainer: {
-    width: 40,
-    height: 40,
-    borderRadius: 10,
+  timeRow: { flexDirection: "row", alignItems: "center" },
+  timeText: { fontSize: 16, color: "#333" },
+  dateLabelText: {
+    fontSize: 16,
+    fontWeight: "600",
+    marginTop: 15,
+    marginBottom: 10,
+  },
+
+  checkInRow: { flexDirection: "row", justifyContent: "space-between" },
+  cameraBox: {
+    width: "48%",
+    height: 150,
+    backgroundColor: "#E8EDF2",
+    borderRadius: 15,
     justifyContent: "center",
     alignItems: "center",
   },
-  menuTextContainer: { flex: 1, marginLeft: 15 },
-  menuTitle: { fontSize: 16, fontWeight: "600" },
-  menuSubtitle: { fontSize: 12, color: "#888" },
-  statsRow: {
+  cameraBoxDashed: {
+    width: "48%",
+    height: 150,
+    backgroundColor: "#E8EDF2",
+    borderRadius: 15,
+    borderWidth: 1.5,
+    borderColor: "#A0AAB8",
+    borderStyle: "dashed",
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  cameraLabel: { fontSize: 16, fontWeight: "bold", marginTop: 8 },
+  cameraSubLabel: { fontSize: 12, color: "#666" },
+
+  scoreTitle: {
+    fontSize: 16,
+    fontWeight: "bold",
+    textAlign: "center",
+    marginBottom: 20,
+  },
+  scoreContainer: { alignItems: "center", marginVertical: 10 },
+  progressCircle: {
+    width: 140,
+    height: 140,
+    borderRadius: 70,
+    borderWidth: 10,
+    borderColor: "#A0AAB8", // This mimics the circle in the photo
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  scoreValue: { fontSize: 40, fontWeight: "bold" },
+  scoreUnit: { fontSize: 14, color: "#666" },
+  grayBar: {
+    height: 20,
+    backgroundColor: "#E0E0E0",
+    width: "100%",
+    marginTop: 20,
+    borderRadius: 5,
+  },
+
+  historyButton: {
+    backgroundColor: "white",
+    padding: 18,
+    borderRadius: 15,
     flexDirection: "row",
     justifyContent: "space-between",
-    marginBottom: 15,
-  },
-  statBox: {
-    backgroundColor: "white",
-    width: "48%",
-    borderRadius: 15,
-    padding: 20,
-    alignItems: "flex-start",
-  },
-  statValue: { fontSize: 28, fontWeight: "bold", color: "#FF9F43" },
-  statLabel: { fontSize: 12, color: "#888", marginTop: 5 },
-  scheduleItem: { flexDirection: "row", alignItems: "center", marginTop: 15 },
-  dayText: { width: 25, fontSize: 14, fontWeight: "600" },
-  progressBarContainer: {
-    flex: 1,
-    height: 8,
-    backgroundColor: "#EEE",
-    borderRadius: 4,
-    marginHorizontal: 10,
-  },
-  progressBarFill: {
-    width: "70%",
-    height: "100%",
-    backgroundColor: "#FF9F43",
-    borderRadius: 4,
-  },
-  timeText: { fontSize: 12, color: "#666" },
-  noContractCard: {
-    flexDirection: "row",
-    backgroundColor: "rgba(255, 255, 255, 0.95)", // สีขาวนวลตัดกับ Header สีส้ม
-    borderRadius: 15,
-    padding: 15,
-    marginTop: 15,
     alignItems: "center",
-    borderWidth: 2,
-    borderColor: "#FF3B30", // สีแดงเตือนให้ทำสัญญา
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.2,
-    shadowRadius: 5,
-    elevation: 8,
+    marginBottom: 40,
   },
-  warningIconContainer: {
-    marginRight: 15,
-  },
-  actionBtn: {
-    backgroundColor: "#FF3B30",
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 8,
-  },
-  actionBtnText: {
-    color: "white",
-    fontWeight: "bold",
-    fontSize: 12,
-  },
-  lockOverlayTextContainer: {
-    position: "absolute",
-    top: 100, // ปรับตามความเหมาะสม
-    left: 0,
-    right: 0,
-    alignItems: "center",
-    justifyContent: "center",
-    paddingHorizontal: 40,
-  },
-  lockText: {
-    marginTop: 10,
-    fontSize: 14,
-    color: "#444",
-    textAlign: "center",
-    fontWeight: "600",
-    backgroundColor: "rgba(255,255,255,0.8)",
-    padding: 10,
-    borderRadius: 10,
-  },
+  historyText: { fontSize: 16, fontWeight: "bold" },
 });
