@@ -1,8 +1,4 @@
-import { FontAwesome5, Ionicons } from "@expo/vector-icons";
-import DateTimePicker, {
-  DateTimePickerEvent,
-} from "@react-native-community/datetimepicker";
-
+import { Ionicons } from "@expo/vector-icons";
 import bcrypt from "bcryptjs";
 import * as Crypto from "expo-crypto";
 import { useRouter } from "expo-router";
@@ -10,6 +6,10 @@ import React, { useState } from "react";
 import {
   ActivityIndicator,
   Alert,
+  Image,
+  Keyboard,
+  KeyboardAvoidingView,
+  Modal,
   Platform,
   Pressable,
   SafeAreaView,
@@ -18,67 +18,79 @@ import {
   StyleSheet,
   Text,
   TextInput,
+  TouchableOpacity,
+  TouchableWithoutFeedback,
   View,
 } from "react-native";
 import { supabase } from "../../lib/supabase";
 
-export default function AuthScreen() {
+export default function VendorAuth() {
   const router = useRouter();
-  const [isLogin, setIsLogin] = useState(true); // Toggle state
+  const [isLogin, setIsLogin] = useState(true);
   const [loading, setLoading] = useState(false);
-  const [showDatePicker, setShowDatePicker] = useState(false);
-  const [date, setDate] = useState(new Date());
+  const [showPassword, setShowPassword] = useState(false);
+  const [showPrefixModal, setShowPrefixModal] = useState(false);
+  const prefixes = ["นาย", "นาง", "นางสาว"];
 
-  const onDateChange = (event: DateTimePickerEvent, selectedDate?: Date) => {
-    setShowDatePicker(Platform.OS === "ios"); // iOS stays open, Android closes
-    if (selectedDate) {
-      setDate(selectedDate);
-      // Format to YYYY-MM-DD for Supabase
-      const formattedDate = selectedDate.toISOString().split("T")[0];
-      setForm({ ...form, birth_date: formattedDate });
-    }
-  };
-
-  // Combined form state
   const [form, setForm] = useState({
-    username: "",
-    email: "",
     password: "",
+    firstName: "",
+    lastName: "",
     phone: "",
-    first_name: "",
-    last_name: "",
-    birth_date: "",
+    email: "",
+    prefix: "นาย",
+    birthDate: "",
+  });
+
+  const [formLogin, setFormLogin] = useState({
+    emailOrPhone: "",
+    password: "",
   });
 
   const handleAuth = async () => {
-    // Simple validation
-    console.log("Current Form State:", form);
-    if (!form.username || !form.password || (!isLogin && !form.email)) {
-      Alert.alert("Error", "โปรดกรอกข้อมูลให้ครบถ้วน");
-      return;
-    }
-
     setLoading(true);
 
     try {
       if (isLogin) {
         // --- LOGIN LOGIC ---
-        const { data: vendor, error } = await supabase
+        if (!formLogin.emailOrPhone || !formLogin.password) {
+          throw new Error("โปรดกรอกอีเมล/เบอร์โทรศัพท์ และรหัสผ่าน");
+        }
+
+        // ปรับ identifier ให้เป็นตัวเล็กทั้งหมด (เฉพาะอีเมล เบอร์โทรศัพท์ไม่มีผล)
+        // และตัดช่องว่างทิ้ง
+        const identifier = formLogin.emailOrPhone.trim().toLowerCase();
+
+        let vendor = null;
+
+        // 1. ลองหาจาก Email
+        const { data: byEmail } = await supabase
           .from("vendors")
           .select("id, password, first_name, last_name")
-          .eq("username", form.username)
-          .single();
+          .eq("email", identifier)
+          .maybeSingle();
 
-        if (error || !vendor) {
-          throw new Error("ไม่พบชื่อผู้ใช้งานนี้");
+        vendor = byEmail;
+
+        // 2. ถ้าหาจาก Email ไม่เจอ และ identifier เป็นตัวเลขล้วน ให้ลองหาจาก Phone
+        if (!vendor && /^\d+$/.test(identifier)) {
+          const { data: byPhone } = await supabase
+            .from("vendors")
+            .select("id, password, first_name, last_name")
+            .eq("phone", identifier)
+            .maybeSingle();
+          vendor = byPhone;
+        }
+
+        if (!vendor) {
+          throw new Error("ไม่พบผู้ใช้งานด้วยอีเมลหรือเบอร์โทรศัพท์นี้");
         }
 
         const isPasswordValid = await bcrypt.compare(
-          form.password,
+          formLogin.password,
           vendor.password,
         );
-        console.log("Hashed for comparison:", form.password);
-        console.log("Stored hash:", vendor.password);
+
         if (!isPasswordValid) {
           throw new Error("รหัสผ่านไม่ถูกต้อง");
         }
@@ -86,309 +98,525 @@ export default function AuthScreen() {
         Alert.alert("สำเร็จ", `ยินดีต้อนรับคุณ ${vendor.first_name}`);
         router.replace({
           pathname: "/(vendor)",
-          params: { vendorId: vendor.id }, // Pass the ID here
+          params: { vendorId: vendor.id },
         });
       } else {
         // --- REGISTER LOGIC ---
-        // const saltRounds = 10;
-        // const hashedPassword = await bcrypt.hash(form.password, saltRounds);
+        if (
+          !form.firstName ||
+          !form.lastName ||
+          !form.phone ||
+          !form.email ||
+          !form.password
+        ) {
+          throw new Error("โปรดกรอกข้อมูลการสมัครสมาชิกให้ครบถ้วน");
+        }
+
+        if (form.password.length < 8) {
+          throw new Error("รหัสผ่านต้องมีความยาวอย่างน้อย 8 ตัวอักษร");
+        }
+
+        // 1. ตรวจสอบอีเมลและเบอร์โทรศัพท์ซ้ำ
+        const cleanEmail = form.email.trim().toLowerCase();
+        const { data: existingUser, error: checkError } = await supabase
+          .from("vendors")
+          .select("email, phone, first_name, last_name")
+          .or(
+            `email.eq.${cleanEmail},phone.eq.${form.phone},and(first_name.eq.${form.firstName},last_name.eq.${form.lastName})`,
+          )
+          .maybeSingle();
+
+        if (checkError) throw checkError;
+
+        if (existingUser) {
+          if (existingUser.email === cleanEmail) {
+            throw new Error("อีเมลนี้ถูกใช้งานไปแล้ว");
+          }
+          if (existingUser.phone === form.phone) {
+            throw new Error("เบอร์โทรศัพท์นี้ถูกใช้งานไปแล้ว");
+          }
+          if (
+            existingUser.first_name === form.firstName &&
+            existingUser.last_name === form.lastName
+          ) {
+            throw new Error("ชื่อและนามสกุลนี้มีอยู่ในระบบแล้ว");
+          }
+        }
+
+        // 2. ถ้าผ่านการตรวจสอบ ให้ทำการ Hash Password และ Insert ตามปกติ
         bcrypt.setRandomFallback((len) => {
           const array = Crypto.getRandomValues(new Uint8Array(len));
           return Array.from(array);
         });
+
         const hashedPassword = bcrypt.hashSync(form.password, 10);
 
-        console.log("Hashed successfully:", hashedPassword);
-
-        const { error } = await supabase.from("vendors").insert({
-          username: form.username,
-          email: form.email,
+        const { error: insertError } = await supabase.from("vendors").insert({
+          prefix: form.prefix,
+          email: cleanEmail,
           phone: form.phone,
           password: hashedPassword,
-          first_name: form.first_name,
-          last_name: form.last_name,
-          birth_date: form.birth_date,
+          first_name: form.firstName,
+          last_name: form.lastName,
         });
 
-        if (error) throw error;
+        if (insertError) throw insertError;
 
-        // SUCCESS: Alert the user then switch to Login view
-        Alert.alert("Success", "Registration complete! Please log in.");
-
-        // OPTIONAL: Clear the password field for security
+        Alert.alert("สำเร็จ", "ลงทะเบียนสำเร็จ กรุณาเข้าสู่ระบบ");
         setForm({ ...form, password: "" });
-
-        // Change the UI state to show the login form
         setIsLogin(true);
       }
     } catch (err: any) {
-      Alert.alert("Error", err.message);
+      Alert.alert("ข้อผิดพลาด", err.message);
     } finally {
       setLoading(false);
     }
   };
 
+  React.useEffect(() => {
+    // ล้างรหัสผ่านทั้งสองฟอร์มเมื่อมีการสลับหน้า Login/Register
+    setForm((prev) => ({ ...prev, password: "" }));
+    setFormLogin((prev) => ({ ...prev, password: "" }));
+    setShowPassword(false); // ปิดตาด้วย
+  }, [isLogin]);
+
   return (
     <SafeAreaView style={styles.container}>
-      <StatusBar barStyle="light-content" />
+      <StatusBar barStyle="dark-content" />
 
-      {/* 1. Header Section */}
-      <View style={styles.headerBackground}>
-        <Pressable onPress={() => router.back()} style={styles.backBtn}>
-          <Ionicons name="chevron-back" size={28} color="white" />
-        </Pressable>
-        <View style={styles.logoRow}>
-          <View style={styles.iconCircle}>
-            <FontAwesome5 name="store" size={18} color="#F59E0B" />
-          </View>
-          <Text style={styles.headerTitle}>
-            {isLogin ? "เข้าสู่ระบบ" : "ลงทะเบียนใหม่"}
-          </Text>
-        </View>
-      </View>
+      <KeyboardAvoidingView
+        behavior={Platform.OS === "ios" ? "padding" : "height"}
+        style={{ flex: 1 }}
+      >
+        <TouchableWithoutFeedback onPress={Keyboard.dismiss}>
+          <View style={{ flex: 1 }}>
+            <View style={styles.header}>
+              {/* ส่วนซ้าย: ปุ่มย้อนกลับ */}
+              <TouchableOpacity
+                onPress={() => {
+                  if (!isLogin) {
+                    // ถ้าอยู่หน้าสมัครสมาชิก ให้สลับกลับไปหน้า Login
+                    setIsLogin(true);
+                  } else {
+                    // ถ้าอยู่หน้า Login อยู่แล้ว ให้ย้อนกลับไปหน้าก่อนหน้า (เช่น หน้า Role Selection)
+                    router.back();
+                  }
+                }}
+                style={styles.backButton}
+              >
+                <Ionicons name="chevron-back" size={24} color="black" />
+              </TouchableOpacity>
 
-      {/* 2. Form Card */}
-      <View style={styles.contentCard}>
-        {/* Toggle Tabs */}
-        <View style={styles.tabContainer}>
-          <Pressable
-            style={[styles.tab, isLogin && styles.activeTab]}
-            onPress={() => setIsLogin(true)}
-          >
-            <Text style={[styles.tabText, isLogin && styles.activeTabText]}>
-              เข้าสู่ระบบ
-            </Text>
-          </Pressable>
-          <Pressable
-            style={[styles.tab, !isLogin && styles.activeTab]}
-            onPress={() => setIsLogin(false)}
-          >
-            <Text style={[styles.tabText, !isLogin && styles.activeTabText]}>
-              ลงทะเบียน
-            </Text>
-          </Pressable>
-        </View>
-
-        <ScrollView
-          showsVerticalScrollIndicator={false}
-          contentContainerStyle={styles.scrollPadding}
-        >
-          <View style={styles.inputGroup}>
-            <Text style={styles.label}>Username</Text>
-            <TextInput
-              style={styles.input}
-              placeholder="Username"
-              value={form.username}
-              onChangeText={(t) => setForm({ ...form, username: t })}
-              autoCapitalize="none"
-            />
-
-            {!isLogin && (
-              <>
-                <Text style={styles.label}>Email</Text>
-                <TextInput
-                  style={styles.input}
-                  placeholder="Email"
-                  value={form.email}
-                  onChangeText={(t) => setForm({ ...form, email: t })}
-                  keyboardType="email-address"
-                />
-              </>
-            )}
-
-            <Text style={styles.label}>Password</Text>
-            <TextInput
-              style={styles.input}
-              placeholder="Password"
-              secureTextEntry
-              value={form.password} // Must match the key in your state
-              onChangeText={(t) => setForm({ ...form, password: t })} // "password" must be lowercase
-            />
-
-            {!isLogin && (
-              <>
-                {/* Section Header */}
-                <Text style={[styles.sectionTitle, { marginTop: 24 }]}>
-                  ข้อมูลส่วนตัว (Personal Info)
-                </Text>
-
-                {/* First Name & Last Name Row */}
-                <View style={styles.row}>
-                  <View style={{ flex: 1, marginRight: 8 }}>
-                    <Text style={styles.label}>ชื่อจริง</Text>
-                    <TextInput
-                      style={styles.input}
-                      placeholder="สมชาย"
-                      value={form.first_name}
-                      onChangeText={(t) => setForm({ ...form, first_name: t })}
-                    />
-                  </View>
-                  <View style={{ flex: 1 }}>
-                    <Text style={styles.label}>นามสกุล</Text>
-                    <TextInput
-                      style={styles.input}
-                      placeholder="ใจดี"
-                      value={form.last_name}
-                      onChangeText={(t) => setForm({ ...form, last_name: t })}
-                    />
-                  </View>
-                </View>
-
-                {/* Phone Number */}
-                <Text style={styles.label}>เบอร์โทรศัพท์ (10 หลัก)</Text>
-                <TextInput
-                  style={styles.input}
-                  placeholder="08XXXXXXXX"
-                  value={form.phone}
-                  onChangeText={(t) => {
-                    // Only allow numbers and max length of 10
-                    const cleanNumber = t.replace(/[^0-9]/g, "");
-                    if (cleanNumber.length <= 10) {
-                      setForm({ ...form, phone: cleanNumber });
-                    }
-                  }}
-                  keyboardType="phone-pad"
-                  maxLength={10}
-                />
-
-                {/* Birth Date */}
-                <Text style={styles.label}>วันเกิด</Text>
-                <Pressable
-                  style={styles.dateSelector}
-                  onPress={() => setShowDatePicker(true)}
-                >
-                  <Text
-                    style={[
-                      styles.dateText,
-                      !form.birth_date && { color: "#9CA3AF" },
-                    ]}
-                  >
-                    {form.birth_date ? form.birth_date : "เลือกวันที่"}
-                  </Text>
-                  <Ionicons name="calendar-outline" size={20} color="#6B7280" />
-                </Pressable>
-
-                {showDatePicker && (
-                  <DateTimePicker
-                    value={date}
-                    mode="date"
-                    display="default"
-                    onChange={onDateChange}
-                    maximumDate={new Date()} // Can't be born in the future
-                  />
-                )}
-              </>
-            )}
-          </View>
-
-          <Pressable
-            style={styles.submitBtn}
-            onPress={handleAuth}
-            disabled={loading}
-          >
-            {loading ? (
-              <ActivityIndicator color="white" />
-            ) : (
-              <Text style={styles.submitText}>
-                {isLogin ? "เข้าสู่ระบบ" : "ลงทะเบียน"}
+              {/* ส่วนกลาง: ชื่อหน้า */}
+              <Text style={styles.headerTitle}>
+                {isLogin ? "เข้าสู่ระบบสำหรับผู้ค้า" : "สร้างบัญชีสำหรับผู้ค้า"}
               </Text>
-            )}
-          </Pressable>
 
-          <View style={{ height: 60 }} />
-        </ScrollView>
-      </View>
+              {/* ส่วนขวา: View เปล่าเพื่อช่วยดัน Text ให้อยู่กลาง (Invisible spacer) */}
+              <View style={styles.headerSpacer} />
+            </View>
+            <ScrollView
+              showsVerticalScrollIndicator={false}
+              contentContainerStyle={styles.scrollContent}
+              keyboardShouldPersistTaps="handled" // ช่วยให้กดปุ่มในฟอร์มได้แม้คีย์บอร์ดเปิดอยู่
+            >
+              {isLogin ? (
+                /* --- LOGIN VIEW --- */
+                <View style={styles.loginWrapper}>
+                  <Image
+                    source={require("../../assets/images/31195589_7776215 1.png")} // ใส่รูปภาพประกอบตามในแบบ
+                    style={styles.illustration}
+                    resizeMode="contain"
+                  />
+                  <View style={styles.inputContainer}>
+                    <Text style={styles.fieldLabel}>
+                      อีเมล หรือ เบอร์โทรศัพท์
+                    </Text>
+                    <TextInput
+                      style={styles.input}
+                      placeholderTextColor="#94A3B8"
+                      value={formLogin.emailOrPhone}
+                      onChangeText={(t) =>
+                        setFormLogin({
+                          ...formLogin,
+                          emailOrPhone: t.toLowerCase(),
+                        })
+                      }
+                    />
+                  </View>
+                  <View style={styles.inputContainer}>
+                    <Text style={styles.fieldLabel}>รหัสผ่าน</Text>
+                    <View style={{ justifyContent: "center" }}>
+                      <TextInput
+                        style={styles.input}
+                        secureTextEntry={!showPassword}
+                        value={formLogin.password}
+                        onChangeText={(t) =>
+                          setFormLogin({ ...formLogin, password: t })
+                        }
+                      />
+                      <TouchableOpacity
+                        onPress={() => setShowPassword(!showPassword)}
+                        style={[styles.eyeIcon, { top: undefined }]} // ล้างค่า top เดิม
+                      >
+                        <Ionicons
+                          name={
+                            showPassword ? "eye-outline" : "eye-off-outline"
+                          }
+                          size={20}
+                          color="#64748B"
+                        />
+                      </TouchableOpacity>
+                    </View>
+                  </View>
+                  <TouchableOpacity style={styles.forgotBtn}>
+                    <Text style={styles.forgotText}>ลืมรหัสผ่าน?</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    style={[styles.mainBtn, loading && { opacity: 0.8 }]} // ลดความเข้มปุ่มลงเล็กน้อยตอนโหลด
+                    onPress={handleAuth}
+                    disabled={loading} // ป้องกันการกดซ้ำขณะโหลด
+                  >
+                    {loading ? (
+                      <ActivityIndicator color="white" /> // แสดงวงกลมหมุนๆ
+                    ) : (
+                      <Text style={styles.mainBtnText}>เข้าสู่ระบบ</Text>
+                    )}
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    onPress={() => setIsLogin(false)}
+                    style={styles.toggleBtn}
+                  >
+                    <Text style={styles.toggleText1}>
+                      {"ยังไม่มีบัญชี? "}
+                      <Text style={styles.toggleText2}>สร้างบัญชี</Text>
+                    </Text>
+                  </TouchableOpacity>
+                </View>
+              ) : (
+                /* --- REGISTER VIEW --- */
+                <View style={styles.registerWrapper}>
+                  <Text style={styles.sectionLabel}>
+                    เริ่มสมัครใช้งานข้างทาง
+                  </Text>
+
+                  <View style={styles.inputContainer}>
+                    <Text style={styles.fieldLabel}>คำนำหน้าชื่อ</Text>
+                    <TouchableOpacity
+                      style={styles.pickerFake}
+                      onPress={() => setShowPrefixModal(true)}
+                    >
+                      <Text style={styles.inputText}>{form.prefix}</Text>
+                      <Ionicons name="chevron-down" size={20} color="#64748B" />
+                    </TouchableOpacity>
+                  </View>
+
+                  <View style={styles.inputContainer}>
+                    <Text style={styles.fieldLabel}>ชื่อ</Text>
+                    <TextInput
+                      style={styles.input}
+                      placeholder="ระบุชื่อของคุณ"
+                      value={form.firstName}
+                      onChangeText={(t) => setForm({ ...form, firstName: t })}
+                    />
+                  </View>
+
+                  <View style={styles.inputContainer}>
+                    <Text style={styles.fieldLabel}>นามสกุล</Text>
+                    <TextInput
+                      style={styles.input}
+                      placeholder="ระบุนามสกุลของคุณ"
+                      value={form.lastName}
+                      onChangeText={(t) => setForm({ ...form, lastName: t })}
+                    />
+                  </View>
+
+                  <View style={styles.inputContainer}>
+                    <Text style={styles.fieldLabel}>หมายเลขโทรศัพท์</Text>
+                    <TextInput
+                      style={styles.input}
+                      placeholder="0XXXXXXXXX"
+                      placeholderTextColor="#94A3B8" // กำหนดสีให้ชัดเจนขึ้น
+                      keyboardType="phone-pad"
+                      value={form.phone}
+                      maxLength={10} // จำกัดจำนวนตัวอักษรไว้ที่ 10 หลัก
+                      onChangeText={(t) => {
+                        // ป้องกันการพิมพ์ตัวอักษรที่ไม่ใช่ตัวเลข (เผื่อกรณีคีย์บอร์ดบางตัวยอมให้พิมพ์)
+                        const cleaned = t.replace(/[^0-9]/g, "");
+                        setForm({ ...form, phone: cleaned });
+                      }}
+                    />
+                  </View>
+
+                  <View style={styles.inputContainer}>
+                    <Text style={styles.fieldLabel}>อีเมล</Text>
+                    <TextInput
+                      style={styles.input}
+                      placeholder="example@gmail.com"
+                      placeholderTextColor="#94A3B8" // กำหนดสีเทาให้เห็นชัดเจน
+                      keyboardType="email-address"
+                      autoCapitalize="none" // ปิดการขึ้นต้นตัวใหญ่ให้อัตโนมัติ (เหมาะกับอีเมล)
+                      autoCorrect={false} // ปิดการแก้คำผิดอัตโนมัติ
+                      value={form.email}
+                      onChangeText={(t) =>
+                        setForm({ ...form, email: t.trim().toLowerCase() })
+                      } // trim() เพื่อลบช่องว่างหัว-ท้ายออกอัตโนมัติ
+                    />
+                  </View>
+
+                  <View style={styles.inputContainer}>
+                    <Text style={styles.fieldLabel}>รหัสผ่าน</Text>
+                    <View style={{ justifyContent: "center" }}>
+                      <TextInput
+                        style={styles.input}
+                        placeholder="ตั้งรหัสผ่านของคุณ (อย่างน้อย 8 ตัวอักษร)"
+                        placeholderTextColor="#94A3B8"
+                        secureTextEntry={!showPassword}
+                        autoCapitalize="none"
+                        value={form.password}
+                        onChangeText={(t) => setForm({ ...form, password: t })}
+                      />
+                      <TouchableOpacity
+                        onPress={() => setShowPassword(!showPassword)}
+                        style={[styles.eyeIcon, { top: undefined }]} // ปรับให้กึ่งกลางแนวตั้งตาม input
+                      >
+                        <Ionicons
+                          name={
+                            showPassword ? "eye-outline" : "eye-off-outline"
+                          }
+                          size={20}
+                          color="#64748B"
+                        />
+                      </TouchableOpacity>
+                    </View>
+                  </View>
+
+                  <TouchableOpacity
+                    style={[styles.mainBtn, loading && { opacity: 0.8 }]}
+                    onPress={handleAuth}
+                    disabled={loading}
+                  >
+                    {loading ? (
+                      <ActivityIndicator color="white" />
+                    ) : (
+                      <Text style={styles.mainBtnText}>สร้างบัญชี</Text>
+                    )}
+                  </TouchableOpacity>
+                </View>
+              )}
+              <View style={{ height: Platform.OS === "ios" ? 100 : 40 }} />
+            </ScrollView>
+          </View>
+        </TouchableWithoutFeedback>
+      </KeyboardAvoidingView>
+      <Modal
+        visible={showPrefixModal}
+        transparent={true}
+        animationType="fade"
+        onRequestClose={() => setShowPrefixModal(false)}
+      >
+        <Pressable
+          style={styles.modalOverlay}
+          onPress={() => setShowPrefixModal(false)}
+        >
+          <View style={styles.modalContent}>
+            <Text
+              style={[styles.fieldLabel, { marginBottom: 15, fontSize: 16 }]}
+            >
+              เลือกคำนำหน้าชื่อ
+            </Text>
+            {prefixes.map((item) => (
+              <TouchableOpacity
+                key={item}
+                style={styles.prefixOption}
+                onPress={() => {
+                  setForm({ ...form, prefix: item });
+                  setShowPrefixModal(false);
+                }}
+              >
+                <Text
+                  style={[
+                    styles.inputText,
+                    form.prefix === item && {
+                      color: "#1E293B",
+                      fontFamily: "Anuphan-Bold",
+                    },
+                  ]}
+                >
+                  {item}
+                </Text>
+                {form.prefix === item && (
+                  <Ionicons name="checkmark" size={20} color="#1E293B" />
+                )}
+              </TouchableOpacity>
+            ))}
+          </View>
+        </Pressable>
+      </Modal>
     </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: "#F59E0B" },
-  headerBackground: { paddingHorizontal: 24, paddingVertical: 20 },
-  backBtn: { marginBottom: 15 },
-  logoRow: { flexDirection: "row", alignItems: "center" },
-  iconCircle: {
-    width: 36,
-    height: 36,
-    borderRadius: 10,
-    backgroundColor: "white",
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: "rgba(0,0,0,0.4)",
     justifyContent: "center",
     alignItems: "center",
-    marginRight: 12,
+    padding: 20,
   },
-  headerTitle: { fontSize: 24, fontWeight: "bold", color: "white" },
-  contentCard: {
-    flex: 1,
+  modalContent: {
+    width: "100%",
     backgroundColor: "white",
-    borderTopLeftRadius: 40,
-    borderTopRightRadius: 40,
-    paddingTop: 24,
+    borderRadius: 20,
+    padding: 20,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 10 },
+    shadowOpacity: 0.1,
+    shadowRadius: 20,
+    elevation: 5,
   },
-  tabContainer: {
-    flexDirection: "row",
-    backgroundColor: "#F3F4F6",
-    marginHorizontal: 24,
-    borderRadius: 16,
-    padding: 4,
-    marginBottom: 20,
-  },
-  tab: { flex: 1, paddingVertical: 12, alignItems: "center", borderRadius: 12 },
-  activeTab: { backgroundColor: "white", elevation: 2, shadowOpacity: 0.1 },
-  tabText: { fontSize: 16, fontWeight: "600", color: "#6B7280" },
-  activeTabText: { color: "#F59E0B" },
-  scrollPadding: { paddingHorizontal: 24 },
-  inputGroup: { gap: 12 },
-  sectionTitle: {
-    fontSize: 18,
-    fontWeight: "bold",
-    color: "#F59E0B", // Orange color to separate sections
-    marginBottom: 16,
-    borderBottomWidth: 1,
-    borderBottomColor: "#F3F4F6",
-    paddingBottom: 8,
-  },
-  label: {
-    fontSize: 14,
-    fontWeight: "600",
-    color: "#4B5563", // Soft dark grey
-    marginBottom: 6,
-    marginLeft: 4,
-  },
-  input: {
-    backgroundColor: "#F9FAFB", // Slightly lighter grey for input
-    borderWidth: 1,
-    borderColor: "#E5E7EB", // Subtle border
-    padding: 16,
-    borderRadius: 16,
-    fontSize: 16,
-    color: "#1F2937",
-    marginBottom: 16,
-  },
-  row: {
-    flexDirection: "row",
-    marginBottom: 0, // Controlled by individual inputs
-  },
-  submitBtn: {
-    backgroundColor: "#F59E0B",
-    padding: 18,
-    borderRadius: 18,
-    alignItems: "center",
-    marginTop: 30,
-  },
-  submitText: { color: "white", fontSize: 18, fontWeight: "bold" },
-  dateSelector: {
-    backgroundColor: "#F9FAFB",
-    borderWidth: 1,
-    borderColor: "#E5E7EB",
-    padding: 16,
-    borderRadius: 16,
-    marginBottom: 16,
+  prefixOption: {
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "center",
+    paddingVertical: 15,
+    borderBottomWidth: 1,
+    borderBottomColor: "#F1F5F9",
   },
-  dateText: {
+  container: {
+    flex: 1,
+    backgroundColor: "white",
+  },
+  header: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between", // ดัน 3 ส่วนให้แยกออกจากกัน
+    paddingHorizontal: 16,
+    height: 60,
+    backgroundColor: "white", // หรือใสตามดีไซน์
+    // borderBottomWidth: 1, // เปิดใช้หากต้องการเส้นขีดแบ่งจางๆ
+    // borderBottomColor: "#F1F5F9",
+  },
+  headerTitle: {
+    fontFamily: "Anuphan-Bold", // ใช้ Font ตามที่คุณตั้งค่าไว้
+    fontSize: 18,
+    color: "#000",
+    textAlign: "center",
+    flex: 1, // ให้ Text กินพื้นที่ตรงกลางทั้งหมด
+  },
+  backButton: {
+    width: 40, // กำหนดความกว้างคงที่เพื่อให้สมดุลกับ Spacer
+    height: 40,
+    justifyContent: "center",
+    alignItems: "flex-start",
+  },
+  headerSpacer: {
+    width: 40, // ต้องเท่ากับความกว้างของ backButton เพื่อให้ Title อยู่กลางจริงๆ
+  },
+  scrollContent: {
+    paddingHorizontal: 24,
+    paddingBottom: 40,
+  },
+  illustration: {
+    width: "100%",
+    height: 220,
+    marginVertical: 20,
+  },
+  loginWrapper: {
+    alignItems: "center",
+  },
+  registerWrapper: {
+    marginTop: 10,
+  },
+  sectionLabel: {
+    fontFamily: "Anuphan-Bold",
+    fontSize: 22,
+    color: "#000",
+    marginBottom: 20,
+  },
+  fieldLabel: {
+    fontFamily: "Anuphan-Regular",
+    fontSize: 14,
+    color: "#64748B",
+    marginBottom: 4,
+  },
+  inputContainer: {
+    width: "100%",
+    marginBottom: 16,
+    justifyContent: "center", // จัดให้อยู่ตรงกลางแนวตั้งโดยอัตโนมัติ
+    position: "relative",
+  },
+
+  eyeIcon: {
+    position: "absolute",
+    right: 16,
+    top: 34,
+    // หากมี Label (fieldLabel) ให้ใช้ padding-top ของตาให้ตรงกับช่อง Input
+    // หรือปรับตามโครงสร้างด้านล่างครับ
+  },
+  input: {
+    width: "100%",
+    height: 56,
+    backgroundColor: "white",
+    borderWidth: 1,
+    borderColor: "#E2E8F0",
+    borderRadius: 8,
+    paddingHorizontal: 16,
     fontSize: 16,
-    color: "#1F2937",
+    fontFamily: "Anuphan-Regular",
+    color: "#1E293B",
+  },
+  inputText: {
+    fontSize: 16,
+    fontFamily: "Anuphan-Regular",
+    color: "#1E293B",
+  },
+  pickerFake: {
+    width: "100%",
+    height: 56,
+    backgroundColor: "white",
+    borderWidth: 1,
+    borderColor: "#E2E8F0",
+    borderRadius: 8,
+    paddingHorizontal: 16,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+  },
+  forgotBtn: {
+    alignSelf: "flex-end",
+    marginBottom: 30,
+  },
+  forgotText: {
+    fontFamily: "Anuphan-Regular",
+    fontSize: 14,
+    color: "#64748B",
+  },
+  mainBtn: {
+    width: "100%",
+    height: 56,
+    backgroundColor: "#64748B", // สีเทาเข้มตามในแบบ
+    borderRadius: 8,
+    justifyContent: "center",
+    alignItems: "center",
+    marginTop: 10,
+  },
+  mainBtnText: {
+    fontFamily: "Anuphan-Bold",
+    fontSize: 18,
+    color: "white",
+  },
+  toggleBtn: {
+    marginTop: 20,
+  },
+  toggleText1: {
+    fontFamily: "Anuphan-Regular",
+    fontSize: 15,
+    color: "#64748B",
+  },
+  toggleText2: {
+    fontFamily: "Anuphan-Bold",
+    color: "#1E293B",
   },
 });
