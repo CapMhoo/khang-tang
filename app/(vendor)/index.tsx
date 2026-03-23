@@ -156,6 +156,23 @@ export default function VendorDashboard() {
     }
   }, [vendorId]);
 
+  const getFormattedHeader = () => {
+    // 1. Get Today's Date in Thai Format (e.g., 15 มี.ค.)
+    const now = new Date();
+    const dateStr = new Intl.DateTimeFormat("th-TH", {
+      day: "numeric",
+      month: "short",
+    }).format(now);
+
+    // 2. Get Operating Hours from contractData
+    // Assuming your DB columns are named 'start_time' and 'end_time' (e.g., "16:00:00")
+    const startTime =
+      contractData?.daily_start_time?.substring(0, 5) || "00:00";
+    const endTime = contractData?.daily_end_time?.substring(0, 5) || "00:00";
+
+    return `${dateStr} | เวลา ${startTime}-${endTime} น.`;
+  };
+
   const handleCheckIn = async () => {
     // 1. USE ImagePicker instead of Camera
     const { status } = await ImagePicker.requestCameraPermissionsAsync();
@@ -443,47 +460,43 @@ export default function VendorDashboard() {
   return (
     <View style={styles.container}>
       <StatusBar
-        barStyle="light-content"
+        barStyle="dark-content"
         translucent
         backgroundColor="transparent"
       />
 
-      {/* 1. Header Section - Dark Slate Blue */}
-      <View style={styles.header}>
-        {/* ใช้ View เปล่าที่มีความสูงเท่ากับ StatusBar หรือใช้ SafeAreaView แค่ส่วนนี้ */}
-        <View style={styles.safeAreaTop}>
-          <View style={styles.headerTop}>
-            <Text style={styles.headerTitle}>
-              สวัสดี {vendorName || "ผู้ประกอบการ"}
-            </Text>
-            <View style={styles.headerIcons}>
-              <TouchableOpacity style={styles.iconCircle}>
-                <Ionicons name="notifications" size={20} color="#333" />
-              </TouchableOpacity>
-              <TouchableOpacity
-                style={styles.iconCircle}
-                onPress={() => setShowMenu(true)}
-              >
-                <Ionicons name="settings-sharp" size={20} color="#333" />
-              </TouchableOpacity>
-            </View>
+      {/* 1. Profile Header */}
+      <View style={styles.safeAreaTop}>
+        <View style={styles.headerTopSimple}>
+          <Text style={styles.headerTitleDark}>
+            สวัสดี {vendorName || "ลีออน"}
+          </Text>
+          <View style={styles.headerIcons}>
+            <TouchableOpacity style={styles.iconCircleSimple}>
+              <Ionicons name="notifications-outline" size={22} color="#333" />
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={styles.iconCircleSimple}
+              onPress={() => setShowMenu(true)}
+            >
+              <Ionicons name="settings-outline" size={22} color="#333" />
+            </TouchableOpacity>
           </View>
         </View>
-        {/* Shop Info Card - Floating Style */}
-        <View style={styles.shopCard}>
-          <View style={styles.shopImageContainer}>
-            <Image
-              source={{
-                uri:
-                  contractData?.shop_image ||
-                  "https://images.unsplash.com/photo-1555126634-323283e090fa?q=80&w=200",
-              }}
-              style={styles.shopImage}
-            />
-          </View>
+      </View>
+
+      <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
+        {/* 2. Shop Info Card */}
+        <View style={styles.shopCardClean}>
+          <Image
+            source={{
+              uri: contractData?.shop_image || "../../assets/images/shop.png",
+            }}
+            style={styles.shopImageSmall}
+          />
           <View style={styles.shopDetail}>
             <Text style={styles.shopNameText}>
-              {contractData?.shop_name || "กำลังโหลด..."}
+              {contractData?.shop_name || "ชื่อร้านค้า"}
             </Text>
             <View style={styles.locationRow}>
               <Ionicons name="location-sharp" size={14} color="#666" />
@@ -491,128 +504,82 @@ export default function VendorDashboard() {
                 {contractData?.zones?.district_name || "พญาไท"}
               </Text>
             </View>
-
-            {/* Badge based on your contract status logic */}
-            {hasActiveContract && (
-              <View style={styles.approvedBadge}>
-                <View style={styles.checkCircle}>
-                  <Ionicons name="checkmark" size={10} color="#4CD964" />
-                </View>
-                <Text style={styles.approvedText}>อนุมัติร้านค้าแล้ว</Text>
-              </View>
-            )}
-          </View>
-        </View>
-      </View>
-
-      <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
-        {/* 2. Trading Hours Section */}
-        <View style={styles.sectionCard}>
-          <Text style={styles.sectionTitle}>เวลาทำการค้า</Text>
-          <View style={styles.timeRow}>
-            <Ionicons name="time-outline" size={18} color="#333" />
-            <Text style={styles.timeText}> 09:00-17:00 น.</Text>
-          </View>
-          <Text style={styles.dateLabelText}>{getThaiDate()}</Text>
-          <View style={styles.checkInRow}>
-            {/* Your Check-in Button Logic */}
-            <TouchableOpacity
-              style={[styles.cameraBox, isCheckedIn && styles.cameraBoxFilled]}
-              onPress={handleCheckIn}
-              disabled={isCheckedIn || uploading}
-            >
-              {isCheckedIn ? (
-                <Image
-                  key={todayCheckinData.photo} // บังคับให้โหลดใหม่เมื่อ URL เปลี่ยน
-                  source={{ uri: todayCheckinData.photo ?? "" }}
-                  style={styles.capturedImage}
-                />
-              ) : (
-                <>
-                  <Ionicons name="camera" size={30} color="#333" />
-                  <Text style={styles.cameraLabel}>เช็คอิน</Text>
-                  <Text style={styles.cameraSubLabel}>ถ่ายรูปพื้นที่</Text>
-                </>
-              )}
-              {isCheckedIn && (
-                <View style={styles.timeOverlay}>
-                  <Text style={styles.overlayText}>
-                    เช็คอิน: {formatThaiTime(todayCheckinData.time || "")}{" "}
-                  </Text>
-                </View>
-              )}
-            </TouchableOpacity>
-
-            {/* Your Check-out Button Logic */}
-            {/* ปุ่มเช็คเอาท์ */}
-            <TouchableOpacity
-              style={[
-                styles.cameraBoxDashed,
-                isCheckedOut && styles.cameraBoxFilled, // ✅ ใช้สไตล์เดียวกับเช็คอินถ้ามีรูปแล้ว
-              ]}
-              onPress={handleCheckOut}
-              disabled={!isCheckedIn || isCheckedOut || uploading}
-            >
-              {isCheckedOut && todayCheckoutData.photo ? (
-                <Image
-                  key={todayCheckoutData.photo}
-                  source={{ uri: todayCheckoutData.photo }}
-                  style={styles.capturedImage}
-                />
-              ) : (
-                <>
-                  <Ionicons
-                    name="camera"
-                    size={30}
-                    color={!isCheckedIn || isCheckedOut ? "#A0AAB8" : "#333"}
-                  />
-                  <Text
-                    style={[
-                      styles.cameraLabel,
-                      isCheckedOut && { color: "#333" },
-                    ]}
-                  >
-                    เช็คเอาท์
-                  </Text>
-                  <Text style={styles.cameraSubLabel}>ถ่ายรูปพื้นที่</Text>
-                </>
-              )}
-
-              {isCheckedOut && todayCheckoutData.time && (
-                <View style={styles.timeOverlay}>
-                  <Text style={styles.overlayText}>
-                    เช็คเอาท์: {formatThaiTime(todayCheckoutData.time)}
-                  </Text>
-                </View>
-              )}
-            </TouchableOpacity>
-          </View>
-        </View>
-
-        {/* 3. Score Section */}
-        <View style={styles.sectionCard}>
-          <Text style={styles.scoreTitle}>
-            คะแนนความสะอาดและการปฏิบัติตามกฎระเบียบ
-          </Text>
-          <View style={styles.scoreContainer}>
-            <View style={styles.progressCircle}>
-              <Text style={styles.scoreValue}>100</Text>
-              <Text style={styles.scoreUnit}>คะแนน</Text>
+            <View style={styles.verifiedBadge}>
+              <Ionicons name="checkmark-circle" size={14} color="#4CD964" />
+              <Text style={styles.verifiedText}>ยืนยันตัวตนแล้ว</Text>
             </View>
           </View>
-          <View style={styles.grayBar} />
+        </View>
+
+        {/* 3. Check-in Section with Green Header */}
+        <View style={styles.checkInSection}>
+          <View style={styles.greenTimeHeader}>
+            <Text style={styles.whiteHeaderText}>{getFormattedHeader()}</Text>
+          </View>
+
+          <View style={styles.checkInBody}>
+            {/* Check-in Row */}
+            {isCheckedIn ? (
+              <View style={styles.statusRow}>
+                <Ionicons name="checkmark" size={20} color="#00875A" />
+                <Text style={styles.statusTextBold}>เช็คอินสำเร็จ</Text>
+              </View>
+            ) : (
+              <TouchableOpacity
+                style={styles.dashedActionBox}
+                onPress={handleCheckIn}
+              >
+                <Ionicons name="camera" size={32} color="#666" />
+                <Text style={styles.actionLabel}>ถ่ายรูปพื้นที่</Text>
+              </TouchableOpacity>
+            )}
+
+            {/* Check-out Row */}
+            {isCheckedIn &&
+              (isCheckedOut ? (
+                <View style={styles.statusRow}>
+                  <Ionicons name="checkmark" size={20} color="#00875A" />
+                  <Text style={styles.statusTextBold}>เช็คเอาท์สำเร็จ</Text>
+                </View>
+              ) : (
+                <View style={styles.checkOutPrompt}>
+                  <Text style={styles.promptTitle}>เช็คเอาท์</Text>
+                  <TouchableOpacity
+                    style={styles.dashedActionBox}
+                    onPress={handleCheckOut}
+                  >
+                    <Ionicons name="camera" size={32} color="#666" />
+                    <Text style={styles.actionLabel}>ถ่ายรูปพื้นที่</Text>
+                  </TouchableOpacity>
+                </View>
+              ))}
+          </View>
         </View>
 
         {/* 4. History Link */}
         <TouchableOpacity
-          style={styles.historyButton}
+          style={styles.historyLinkRow}
           onPress={() =>
             router.push({ pathname: "/history", params: { vendorId } })
           }
         >
-          <Text style={styles.historyText}>ประวัติการเช็คอิน</Text>
-          <Ionicons name="chevron-forward" size={20} color="#000" />
+          <Text style={styles.historyLinkText}>ประวัติการเช็คอิน</Text>
+          <Ionicons name="chevron-forward" size={20} color="#333" />
         </TouchableOpacity>
+
+        {/* 5. Score Section */}
+        <View style={styles.scoreCard}>
+          <Text style={styles.scoreHeader}>คะแนนร้านค้า</Text>
+          <View style={styles.scoreCircleContainer}>
+            <View style={styles.progressRing}>
+              <Text style={styles.bigScoreText}>100</Text>
+              <Text style={styles.scoreSubText}>คะแนน</Text>
+            </View>
+          </View>
+          <View style={styles.statusMessageBar}>
+            <Text style={styles.statusMessageText}>status messages</Text>
+          </View>
+        </View>
       </ScrollView>
       <Modal
         transparent={true}
@@ -644,6 +611,110 @@ export default function VendorDashboard() {
 }
 
 const styles = StyleSheet.create({
+  checkOutPrompt: {
+    marginTop: 15,
+    paddingTop: 15,
+    borderTopWidth: 1, // Keep only this one to separate "In" from "Out"
+    borderTopColor: "#EEEEEE",
+    width: "100%",
+  },
+  scoreCircleContainer: {
+    alignItems: "center",
+    justifyContent: "center",
+    marginVertical: 25,
+    width: "100%",
+  },
+  scoreSubText: {
+    fontSize: 14,
+    color: "#666666",
+    fontWeight: "500",
+    marginTop: -5, // Pulls the label closer to the big number
+  },
+  shopCardClean: {
+    backgroundColor: "white",
+    borderRadius: 15,
+    padding: 15,
+    flexDirection: "row",
+    marginBottom: 20,
+    elevation: 2,
+  },
+  shopImageSmall: { width: 60, height: 60, borderRadius: 10 },
+  verifiedBadge: { flexDirection: "row", alignItems: "center", marginTop: 5 },
+  verifiedText: { color: "#4CD964", fontSize: 12, marginLeft: 4 },
+
+  checkInSection: {
+    backgroundColor: "white",
+    borderRadius: 15,
+    overflow: "hidden",
+    marginBottom: 15,
+    elevation: 2,
+  },
+  greenTimeHeader: {
+    backgroundColor: "#00875A",
+    paddingVertical: 10,
+    paddingHorizontal: 15,
+  },
+  whiteHeaderText: { color: "white", fontWeight: "bold", fontSize: 16 },
+  checkInBody: { padding: 15 },
+  statusRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    paddingVertical: 12,
+    // REMOVE borderBottomWidth if it was here
+    borderRadius: 10,
+    paddingHorizontal: 12,
+  },
+  statusTextBold: { fontSize: 16, fontWeight: "bold", marginLeft: 10 },
+
+  dashedActionBox: {
+    height: 100,
+    borderWidth: 1,
+    borderColor: "#ccc",
+    borderStyle: "dashed",
+    borderRadius: 10,
+    backgroundColor: "#f9f9f9",
+    justifyContent: "center",
+    alignItems: "center",
+    marginTop: 10,
+  },
+  actionLabel: { color: "#666", marginTop: 5 },
+  promptTitle: { fontSize: 16, fontWeight: "bold", marginTop: 10 },
+
+  historyLinkRow: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    padding: 15,
+    backgroundColor: "white",
+    borderRadius: 15,
+    marginBottom: 20,
+  },
+  historyLinkText: { fontWeight: "bold", fontSize: 16 },
+
+  scoreCard: {
+    backgroundColor: "white",
+    borderRadius: 15,
+    padding: 20,
+    alignItems: "center",
+  },
+  scoreHeader: { fontWeight: "bold", fontSize: 16, marginBottom: 15 },
+  progressRing: {
+    width: 150,
+    height: 150,
+    borderRadius: 75,
+    borderWidth: 8,
+    borderColor: "#707E94",
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  bigScoreText: { fontSize: 40, fontWeight: "bold" },
+  statusMessageBar: {
+    backgroundColor: "#eee",
+    width: "100%",
+    padding: 8,
+    marginTop: 20,
+    borderRadius: 5,
+  },
+  statusMessageText: { color: "#666", textAlign: "center" },
   pendingOverlay: {
     backgroundColor: "rgba(0,0,0,0.4)",
     padding: 10,
@@ -705,7 +776,8 @@ const styles = StyleSheet.create({
     justifyContent: "space-between",
     alignItems: "center",
     paddingHorizontal: 20,
-    paddingBottom: 15,
+    paddingBottom: 20,
+    backgroundColor: "#FFFFFF",
   },
   headerTitleDark: {
     fontSize: 20,
@@ -829,6 +901,7 @@ const styles = StyleSheet.create({
     // ใช้ค่าติดลบเพื่อให้ Card ร้านค้าลอยทับส่วน Header เล็กน้อยตามดีไซน์เดิม
     marginTop: -25,
     paddingHorizontal: 20,
+    paddingTop: 40,
   },
   emptyContainer: {
     flex: 1,
@@ -867,6 +940,7 @@ const styles = StyleSheet.create({
     // สำหรับ iOS เราจะใช้ค่าประมาณ 44-47 (หรือใช้คลังแสงจริงถ้าลง safe-area-context)
     // สำหรับ Android ใช้ StatusBar.currentHeight
     paddingTop: Platform.OS === "ios" ? 50 : StatusBar.currentHeight,
+    backgroundColor: "#FFFFFF",
   },
   dropdownMenu: {
     position: "absolute",
