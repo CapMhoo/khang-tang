@@ -110,6 +110,7 @@ export default function ZoneMapScreen() {
   const [storeError, setStoreError] = useState<string | null>(null);
   const [storeContract, setStoreContract] = useState<StoreContract>(null);
   const [storeCheckin, setStoreCheckin] = useState<StoreCheckin>(null);
+  const [storeAvgScore, setStoreAvgScore] = useState<number | null>(null);
   const [photoViewer, setPhotoViewer] = useState<{
     uri: string;
     label: string;
@@ -221,7 +222,7 @@ export default function ZoneMapScreen() {
         return {
           id: String(z.id),
           name: z.district_name || "ไม่ระบุชื่อโซน", // Specific zone name (e.g., Ari Soi 1)
-          district: z.district || "ไม่ระบุเขต",      // Larger scope (e.g., Phaya Thai)
+          district: z.district || "ไม่ระบุเขต", // Larger scope (e.g., Phaya Thai)
           timeRange, // Now it will be "08:00-00:00 น."
           currentShops: current,
           totalShops: total,
@@ -327,21 +328,39 @@ export default function ZoneMapScreen() {
     setStoreError(null);
     setStoreContract(null);
     setStoreCheckin(null);
+    setStoreAvgScore(null);
     storeSheetTranslateY.value = withSpring(0, springConfig);
 
     try {
       const todayYmd = getTodayYmdLocal();
-      const { data: contractData, error: contractError } = await supabase
-        .from("contracts")
-        .select(
-          "id, shop_name, product_type, start_date, end_date, vendors(first_name, last_name)",
-        )
-        .eq("vendor_id", params.vendorId)
-        .eq("zone_id", params.zoneId)
-        .eq("status", "active")
-        .order("created_at", { ascending: false })
-        .limit(1)
-        .maybeSingle();
+      const [
+        { data: contractData, error: contractError },
+        { data: checkinData, error: checkinError },
+        { data: scoreRows, error: scoreError },
+      ] = await Promise.all([
+        supabase
+          .from("contracts")
+          .select(
+            "id, shop_name, product_type, start_date, end_date, vendors(first_name, last_name)",
+          )
+          .eq("vendor_id", params.vendorId)
+          .eq("zone_id", params.zoneId)
+          .eq("status", "active")
+          .order("created_at", { ascending: false })
+          .limit(1)
+          .maybeSingle(),
+        supabase
+          .from("daily_checkins")
+          .select("checkin_time, checkout_time, checkin_photo, checkout_photo")
+          .eq("vendor_id", params.vendorId)
+          .order("checkin_time", { ascending: false })
+          .limit(1)
+          .maybeSingle(),
+        supabase
+          .from("dashboard_vendor_daily_scores")
+          .select("total_score")
+          .eq("vendor_id", params.vendorId),
+      ]);
 
       if (contractError) throw contractError;
       const start = (contractData as any)?.start_date as
@@ -353,16 +372,20 @@ export default function ZoneMapScreen() {
       const endOk = !end || end >= todayYmd;
       setStoreContract(startOk && endOk ? (contractData as any) : null);
 
-      const { data: checkinData, error: checkinError } = await supabase
-        .from("daily_checkins")
-        .select("checkin_time, checkout_time, checkin_photo, checkout_photo")
-        .eq("vendor_id", params.vendorId)
-        .order("checkin_time", { ascending: false })
-        .limit(1)
-        .maybeSingle();
-
       if (checkinError) throw checkinError;
       setStoreCheckin(checkinData as any);
+
+      if (scoreError) {
+        console.warn("Fetch store avg score error:", scoreError);
+      } else {
+        const values = (scoreRows ?? [])
+          .map((r: any) => Number(r.total_score))
+          .filter((n: number) => Number.isFinite(n));
+        if (values.length) {
+          const avg = values.reduce((a, b) => a + b, 0) / values.length;
+          setStoreAvgScore(Math.round(avg));
+        }
+      }
     } catch (err: any) {
       setStoreError(err?.message ?? "โหลดข้อมูลร้านค้าไม่สำเร็จ");
     } finally {
@@ -379,6 +402,7 @@ export default function ZoneMapScreen() {
       setStoreSheet(null);
       setStoreContract(null);
       setStoreCheckin(null);
+      setStoreAvgScore(null);
       setStoreError(null);
       setStoreLoading(false);
     }, 200);
@@ -613,13 +637,15 @@ export default function ZoneMapScreen() {
 
         <Text style={styles.headerTitle}>แผนที่โซนค้าขาย</Text>
 
-      <Pressable onPress={cycleDistrict} style={styles.districtPill}>
-        <Text style={styles.districtText}>
-          {/* If "ทั้งหมด" show that, otherwise show "เขต" + the larger district name */}
-          {selectedDistrict === "ทั้งหมด" ? "เขตทั้งหมด" : `เขต${selectedDistrict}`}
-        </Text>
-        <Ionicons name="chevron-down" size={18} color="#111827" />
-      </Pressable>
+        <Pressable onPress={cycleDistrict} style={styles.districtPill}>
+          <Text style={styles.districtText}>
+            {/* If "ทั้งหมด" show that, otherwise show "เขต" + the larger district name */}
+            {selectedDistrict === "ทั้งหมด"
+              ? "เขตทั้งหมด"
+              : `เขต${selectedDistrict}`}
+          </Text>
+          <Ionicons name="chevron-down" size={18} color="#111827" />
+        </Pressable>
       </View>
 
       <View style={styles.tabPill}>
@@ -755,7 +781,7 @@ export default function ZoneMapScreen() {
                   <Text style={styles.zoneBigTitle} numberOfLines={1}>
                     {selectedZone.name}
                   </Text>
-                  
+
                   <Pressable
                     onPress={() => setSelectedZoneId(null)}
                     style={styles.sheetClose}
@@ -769,12 +795,15 @@ export default function ZoneMapScreen() {
                 <View style={styles.zoneMetaRow}>
                   <View style={styles.metaItem}>
                     <Ionicons name="time-outline" size={18} color="#374151" />
-                    <Text style={styles.metaText}>{selectedZone.timeRange}</Text>
+                    <Text style={styles.metaText}>
+                      {selectedZone.timeRange}
+                    </Text>
                   </View>
                   <View style={styles.metaItem}>
                     <Ionicons name="person-outline" size={18} color="#374151" />
                     <Text style={styles.metaText}>
-                      {selectedZoneVendors.filter((v) => !!v.checkInTime).length || selectedZone.currentShops}
+                      {selectedZoneVendors.filter((v) => !!v.checkInTime)
+                        .length || selectedZone.currentShops}
                       /{selectedZone.totalShops} ร้านค้า
                     </Text>
                   </View>
@@ -853,42 +882,42 @@ export default function ZoneMapScreen() {
                 <Text style={styles.sheetTitle}>โซน</Text>
                 <ScrollView showsVerticalScrollIndicator={false}>
                   {filteredZones.map((zone) => (
-                      <Pressable
-                        key={zone.id}
-                        style={styles.zoneRow}
-                        onPress={() => {
-                          setSelectedZoneId(zone.id);
-                          void ensureZoneDetails(zone.id);
-                          snapSheetTo(0);
-                        }}
-                      >
-                        {/* The Dot Indicator (Green/Orange/Red) */}
-                        <View
-                          style={[
-                            styles.zoneDot,
-                            { backgroundColor: zone.color },
-                          ]}
-                        />
-                        
-                        <View style={styles.zoneRowInfo}>
-                          {/* EDIT: Use zone.name (Specific Soi/Market name) */}
-                          <Text style={styles.zoneRowName}>{zone.name}</Text> 
-                          
-                          {/* EDIT: Use zone.timeRange (Formatted HH:mm) */}
-                          <Text style={styles.zoneRowSub}>{zone.timeRange}</Text>
-                        </View>
+                    <Pressable
+                      key={zone.id}
+                      style={styles.zoneRow}
+                      onPress={() => {
+                        setSelectedZoneId(zone.id);
+                        void ensureZoneDetails(zone.id);
+                        snapSheetTo(0);
+                      }}
+                    >
+                      {/* The Dot Indicator (Green/Orange/Red) */}
+                      <View
+                        style={[
+                          styles.zoneDot,
+                          { backgroundColor: zone.color },
+                        ]}
+                      />
 
-                        {/* The Occupancy Count (e.g., 4/12) */}
-                        <Text style={styles.zoneRowCount}>
-                          {zone.currentShops}/{zone.totalShops}
-                        </Text>
-                        
-                        <Ionicons
-                          name="chevron-forward"
-                          size={18}
-                          color="#D1D5DB"
-                        />
-                      </Pressable>
+                      <View style={styles.zoneRowInfo}>
+                        {/* EDIT: Use zone.name (Specific Soi/Market name) */}
+                        <Text style={styles.zoneRowName}>{zone.name}</Text>
+
+                        {/* EDIT: Use zone.timeRange (Formatted HH:mm) */}
+                        <Text style={styles.zoneRowSub}>{zone.timeRange}</Text>
+                      </View>
+
+                      {/* The Occupancy Count (e.g., 4/12) */}
+                      <Text style={styles.zoneRowCount}>
+                        {zone.currentShops}/{zone.totalShops}
+                      </Text>
+
+                      <Ionicons
+                        name="chevron-forward"
+                        size={18}
+                        color="#D1D5DB"
+                      />
+                    </Pressable>
                   ))}
                   <View style={{ height: 20 }} />
                 </ScrollView>
@@ -1081,7 +1110,9 @@ export default function ZoneMapScreen() {
                     })()}
                   </Text>
                 </View>
-                <Text style={styles.storeScoreText}>85</Text>
+                <Text style={styles.storeScoreText}>
+                  {storeLoading ? "..." : storeAvgScore ?? "—"}
+                </Text>
               </View>
 
               <View style={styles.storeSectionHeaderRow}>
@@ -1272,7 +1303,7 @@ const styles = StyleSheet.create({
     borderBottomLeftRadius: 20,
     borderBottomRightRadius: 20,
     elevation: 5,
-    paddingTop: Platform.OS === 'android' ? 45 : 25,
+    paddingTop: Platform.OS === "android" ? 45 : 25,
   },
   headerBlock: {
     backgroundColor: "white",
@@ -1280,7 +1311,7 @@ const styles = StyleSheet.create({
     borderBottomLeftRadius: 20,
     borderBottomRightRadius: 20,
     elevation: 2,
-    paddingTop: Platform.OS === 'android' ? 45 : 25,
+    paddingTop: Platform.OS === "android" ? 45 : 25,
   },
   headerRow: {
     flexDirection: "row",
@@ -1296,7 +1327,13 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
   },
-  headerTitle: { fontSize: 16, fontWeight: "900", color: "#111827", flex: 1, fontFamily: "Anuphan-Bold",},
+  headerTitle: {
+    fontSize: 16,
+    fontWeight: "900",
+    color: "#111827",
+    flex: 1,
+    fontFamily: "Anuphan-Bold",
+  },
   districtPill: {
     flexDirection: "row",
     alignItems: "center",
@@ -1488,23 +1525,23 @@ const styles = StyleSheet.create({
     color: "#374151",
     opacity: 0.9,
   },
-statusChecked: {
-  flexDirection: "row",
-  alignItems: "center",
-  gap: 4, // Spaces the checkmark away from the text
-},
-statusCheckedText: {
-  fontSize: 15,
-  fontFamily: "Anuphan-Bold", // Ensure this matches your bold font
-  color: "#10B981", // The emerald green from the pic
-  fontWeight: "700",
-},
-statusPendingText: {
-  fontSize: 15,
-  fontFamily: "Anuphan-Bold",
-  color: "#94A3B8", // The muted grey from the pic
-  fontWeight: "700",
-},
+  statusChecked: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4, // Spaces the checkmark away from the text
+  },
+  statusCheckedText: {
+    fontSize: 15,
+    fontFamily: "Anuphan-Bold", // Ensure this matches your bold font
+    color: "#10B981", // The emerald green from the pic
+    fontWeight: "700",
+  },
+  statusPendingText: {
+    fontSize: 15,
+    fontFamily: "Anuphan-Bold",
+    color: "#94A3B8", // The muted grey from the pic
+    fontWeight: "700",
+  },
 
   listRoot: { flex: 1, backgroundColor: "#F3F4F6" },
   listContent: { paddingHorizontal: 16, paddingTop: 14, paddingBottom: 18 },
@@ -1544,26 +1581,26 @@ statusPendingText: {
     backgroundColor: "rgba(17,24,39,0.35)",
   },
   storeSheet: {
-      position: "absolute",
-      left: 0,
-      right: 0,
-      bottom: 0,
-      // FIX: Scaled height for iOS vs Android to fix "too long" look
-      // 0.51 on iPhone 15/16 Pro looks much more balanced than 0.6+
-      height: Platform.OS === 'ios' ? SCREEN_HEIGHT * 0.58 : SCREEN_HEIGHT * 0.51, 
-      backgroundColor: "white",
-      borderTopLeftRadius: 32, 
-      borderTopRightRadius: 32,
-      paddingTop: 8,
-      // Android Shadow
-      elevation: 40, 
-      // iOS Shadow
-      shadowColor: "#000",
-      shadowOffset: { width: 0, height: -10 },
-      shadowOpacity: 0.15,
-      shadowRadius: 20,
-    },
-    
+    position: "absolute",
+    left: 0,
+    right: 0,
+    bottom: 0,
+    // FIX: Scaled height for iOS vs Android to fix "too long" look
+    // 0.51 on iPhone 15/16 Pro looks much more balanced than 0.6+
+    height: Platform.OS === "ios" ? SCREEN_HEIGHT * 0.58 : SCREEN_HEIGHT * 0.51,
+    backgroundColor: "white",
+    borderTopLeftRadius: 32,
+    borderTopRightRadius: 32,
+    paddingTop: 8,
+    // Android Shadow
+    elevation: 40,
+    // iOS Shadow
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: -10 },
+    shadowOpacity: 0.15,
+    shadowRadius: 20,
+  },
+
   storeSheetBody: {
     flex: 1,
     paddingHorizontal: 16,
@@ -1575,8 +1612,8 @@ statusPendingText: {
     marginBottom: 4,
   },
   storeShopTitle: {
-    fontSize: 28, 
-    fontFamily: 'Anuphan-Bold',
+    fontSize: 28,
+    fontFamily: "Anuphan-Bold",
     color: "#111827",
     fontWeight: "900",
     marginBottom: 4,
@@ -1650,15 +1687,20 @@ statusPendingText: {
   },
   storeInspectButton: {
     marginTop: 20,
-      backgroundColor: "#64748B", // Slate-500 color
-      borderRadius: 16,
-      paddingVertical: 16, // Thicker button
-      flexDirection: "row",
-      alignItems: "center",
-      justifyContent: "center",
-      gap: 10,
+    backgroundColor: "#64748B", // Slate-500 color
+    borderRadius: 16,
+    paddingVertical: 16, // Thicker button
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 10,
   },
-  storeInspectButtonText: { color: "white", fontSize: 18, fontWeight: "700", fontFamily: 'Anuphan-Bold' },
+  storeInspectButtonText: {
+    color: "white",
+    fontSize: 18,
+    fontWeight: "700",
+    fontFamily: "Anuphan-Bold",
+  },
 
   photoViewerRoot: {
     ...StyleSheet.absoluteFillObject,
@@ -1716,7 +1758,7 @@ statusPendingText: {
     alignItems: "center", // Level alignment
     justifyContent: "space-between",
     paddingHorizontal: 4, // Aligns with the handle
-    marginTop: -8,       // Pulls the title up closer to the grey handle
+    marginTop: -8, // Pulls the title up closer to the grey handle
     marginBottom: 4,
   },
 });

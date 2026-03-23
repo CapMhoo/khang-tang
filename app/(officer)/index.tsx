@@ -94,9 +94,29 @@ export default function OfficerHomeScreen() {
     if (zonesLoading || zones.length === 0) return;
     const fetchSummary = async () => {
       setSummaryLoading(true);
-      const today = new Date().toISOString().split("T")[0];
-      const startTs = `${today}T00:00:00Z`;
-      const endTs = `${today}T23:59:59.999Z`;
+      const d = new Date();
+      const todayYmd = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(
+        2,
+        "0",
+      )}-${String(d.getDate()).padStart(2, "0")}`;
+
+      const offsetMinutes = -new Date().getTimezoneOffset();
+      const sign = offsetMinutes >= 0 ? "+" : "-";
+      const abs = Math.abs(offsetMinutes);
+      const hh = String(Math.floor(abs / 60)).padStart(2, "0");
+      const mm = String(abs % 60).padStart(2, "0");
+      const offset = `${sign}${hh}:${mm}`;
+      const startTs = `${todayYmd}T00:00:00${offset}`;
+      const endTs = `${todayYmd}T23:59:59.999${offset}`;
+
+      const chunk = <T,>(arr: T[], size: number) => {
+        const out: T[][] = [];
+        for (let i = 0; i < arr.length; i += size) {
+          out.push(arr.slice(i, i + size));
+        }
+        return out;
+      };
+
       const zoneIds = zones
         .filter(
           (z) =>
@@ -104,40 +124,134 @@ export default function OfficerHomeScreen() {
         )
         .map((z) => z.id);
       try {
-        const { data: contracts } = await supabase
+        if (zoneIds.length === 0) {
+          setSummary({
+            totalVendors: 0,
+            inspectedVendorsToday: 0,
+            checkinVendorsToday: 0,
+            lowScoreShops: 0,
+            avgScore: 0,
+          });
+          return;
+        }
+
+        const { data: contracts, error: contractsError } = await supabase
           .from("contracts")
-          .select("id, vendor_id")
+          .select("vendor_id, start_date, end_date")
           .in("zone_id", zoneIds)
           .eq("status", "active");
-        const contractIds = contracts?.map((c) => c.id) || [];
-        const vendorIds = Array.from(
-          new Set(contracts?.map((c) => c.vendor_id) || []),
-        );
-        const { data: inspections } = await supabase
-          .from("inspections")
-          .select("contract_id, score")
-          .in("contract_id", contractIds)
-          .gte("created_at", startTs)
-          .lte("created_at", endTs);
-        const { data: checkins } = await supabase
-          .from("daily_checkins")
-          .select("vendor_id")
-          .in("vendor_id", vendorIds)
-          .gte("checkin_time", startTs);
+        if (contractsError) throw contractsError;
+
+        const activeVendorIds = Array.from(
+          new Set(
+            (contracts ?? [])
+              .filter((c: any) => {
+                const start = (c.start_date as string | null) ?? null;
+                const end = (c.end_date as string | null) ?? null;
+                const startOk = !start || start <= todayYmd;
+                const endOk = !end || end >= todayYmd;
+                return startOk && endOk;
+              })
+              .map((c: any) => String(c.vendor_id)),
+          ),
+        ).filter(Boolean);
+
+        if (activeVendorIds.length === 0) {
+          setSummary({
+            totalVendors: 0,
+            inspectedVendorsToday: 0,
+            checkinVendorsToday: 0,
+            lowScoreShops: 0,
+            avgScore: 0,
+          });
+          return;
+        }
+
+        const inspectedVendorIds = new Set<string>();
+        for (const ids of chunk(activeVendorIds, 200)) {
+          const { data, error } = await supabase
+            .from("dashboard_vendor_daily_scores")
+            .select("vendor_id")
+            .in("vendor_id", ids)
+            .eq("date", todayYmd);
+          if (error) throw error;
+          for (const row of data ?? []) {
+            inspectedVendorIds.add(String((row as any).vendor_id));
+          }
+        }
+
+        const checkinVendorIds = new Set<string>();
+        for (const ids of chunk(activeVendorIds, 200)) {
+          const { data, error } = await supabase
+            .from("daily_checkins")
+            .select("vendor_id")
+            .in("vendor_id", ids)
+            .gte("checkin_time", startTs)
+            .lte("checkin_time", endTs);
+          if (error) throw error;
+          for (const row of data ?? []) {
+            checkinVendorIds.add(String((row as any).vendor_id));
+          }
+        }
+
+        const totalByVendorId = new Map<string, number>();
+        const countByVendorId = new Map<string, number>();
+        const pageSize = 1000;
+        for (const ids of chunk(activeVendorIds, 200)) {
+          for (let from = 0; ; from += pageSize) {
+            const { data, error } = await supabase
+              .from("dashboard_vendor_daily_scores")
+              .select("vendor_id, total_score, date")
+              .in("vendor_id", ids)
+              .order("vendor_id", { ascending: true })
+              .order("date", { ascending: true })
+              .range(from, from + pageSize - 1);
+            if (error) throw error;
+
+            for (const row of data ?? []) {
+              const vendorId = String((row as any).vendor_id ?? "");
+              const score = Number((row as any).total_score);
+              if (!vendorId || !Number.isFinite(score)) continue;
+              totalByVendorId.set(
+                vendorId,
+                (totalByVendorId.get(vendorId) ?? 0) + score,
+              );
+              countByVendorId.set(
+                vendorId,
+                (countByVendorId.get(vendorId) ?? 0) + 1,
+              );
+            }
+
+            if (!data || data.length < pageSize) break;
+          }
+        }
+
+        const avgScoreByVendorId = new Map<string, number>();
+        for (const [vendorId, total] of totalByVendorId.entries()) {
+          const count = countByVendorId.get(vendorId) ?? 0;
+          if (count <= 0) continue;
+          avgScoreByVendorId.set(vendorId, total / count);
+        }
+
+        const vendorAvgValues = Array.from(avgScoreByVendorId.values());
+        const avgScore =
+          vendorAvgValues.length > 0
+            ? Math.round(
+                vendorAvgValues.reduce((a, b) => a + b, 0) /
+                  vendorAvgValues.length,
+              )
+            : 0;
+
+        const lowScoreCount = Array.from(avgScoreByVendorId.values()).filter(
+          (s) => s < 60,
+        ).length;
 
         setSummary({
-          totalVendors: vendorIds.length,
-          inspectedVendorsToday: new Set(inspections?.map((i) => i.contract_id))
-            .size,
-          checkinVendorsToday: new Set(checkins?.map((c) => c.vendor_id)).size,
-          lowScoreShops:
-            inspections?.filter((i) => (i.score || 0) < 50).length || 0,
-          avgScore: inspections?.length
-            ? Math.round(
-                inspections.reduce((a, b) => a + (b.score || 0), 0) /
-                  inspections.length,
-              )
-            : 0,
+          totalVendors: activeVendorIds.length,
+          inspectedVendorsToday: inspectedVendorIds.size,
+          checkinVendorsToday: checkinVendorIds.size,
+          lowScoreShops: lowScoreCount,
+          avgScore,
         });
       } catch (err) {
         console.error(err);
@@ -164,7 +278,7 @@ export default function OfficerHomeScreen() {
               style={styles.topIconBtn}
               onPress={() => {
                 settingsBtnRef.current?.measureInWindow?.(
-                  (x, y, width, height) => {
+                  (x: number, y: number, width: number, height: number) => {
                     setSettingsMenu({
                       x: x - MENU_WIDTH + width,
                       y: y + height + 5,
