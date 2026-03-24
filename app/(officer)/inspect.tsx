@@ -1,7 +1,7 @@
 import { Ionicons } from "@expo/vector-icons";
 import * as ImagePicker from "expo-image-picker";
 import { useRouter } from "expo-router";
-import React, { useState } from "react";
+import { useEffect, useState } from "react";
 import {
   FlatList,
   Image,
@@ -16,6 +16,7 @@ import {
   TouchableOpacity,
   View,
 } from "react-native";
+import { supabase } from "../../lib/supabase";
 
 // --- MOCK DATA (You will replace this with real database data later) ---
 const DISTRICT_OPTIONS = ["เขตปทุมวัน", "เขตราชเทวี", "เขตบางรัก", "เขตพระนคร", "เขตจตุจักร"];
@@ -25,18 +26,55 @@ const VENDOR_OPTIONS = ["V001 - ร้านข้าวมันไก่เฮ
 export default function OfficerInspectScreen() {
   const router = useRouter();
 
-  // --- FORM STATE ---
+  // 1. ALL STATES
   const [district, setDistrict] = useState("เลือกเขต");
   const [zone, setZone] = useState("เลือกพื้นที่ทำการค้า");
   const [vendor, setVendor] = useState("เลือกร้าน");
-  
-  const [cleanliness, setCleanliness] = useState<number | null>(null);
-  const [orderliness, setOrderliness] = useState<number | null>(null);
-  const [violations, setViolations] = useState<string[]>([]);
-  const [imageUri, setImageUri] = useState<string | null>(null);
+  const [cleanliness, setCleanliness] = useState(null); // Removed TypeScript <number> for now to test
+  const [orderliness, setOrderliness] = useState(null);
+  const [violations, setViolations] = useState([]);
+  const [imageUri, setImageUri] = useState(null);
+  const [activeDropdown, setActiveDropdown] = useState(null);
+  const [notes, setNotes] = useState(""); // Add state for your TextInput
 
-  // --- MODAL VISIBILITY STATE ---
-  const [activeDropdown, setActiveDropdown] = useState<"district" | "zone" | "vendor" | null>(null);
+  const [districtOptions, setDistrictOptions] = useState([]);
+  const [zoneOptions, setZoneOptions] = useState([]);
+  const [vendorOptions, setVendorOptions] = useState([]);
+
+  // 2. THE FETCH LOGIC
+  useEffect(() => {
+    const loadData = async () => {
+      try {
+        console.log("Fetching from Supabase...");
+        
+        // Districts
+        const { data: dData } = await supabase.from("zones").select("district");
+        if (dData) {
+          const unique = [...new Set(dData.map(item => item.district))].filter(Boolean);
+          setDistrictOptions(unique);
+        }
+
+        // Zones
+        const { data: zData } = await supabase.from("zones").select("district_name");
+        if (zData) {
+          const unique = [...new Set(zData.map(item => item.district_name))].filter(Boolean);
+          setZoneOptions(unique);
+        }
+
+        // Vendors
+        const { data: vData } = await supabase.from("vendors").select("first_name, last_name");
+        if (vData) {
+          setVendorOptions(vData.map(v => `${v.first_name} ${v.last_name}`));
+        }
+      } catch (err) {
+        console.error("Supabase Error:", err.message);
+      }
+    };
+
+    loadData();
+  }, []);
+
+  // ... keep your violationOptions and the rest of the file exactly as it is!
 
   const violationOptions = [
     "ตั้งวางสิ่งของเกินเขตหรือนอกจุดที่กำหนด",
@@ -230,9 +268,9 @@ export default function OfficerInspectScreen() {
       </ScrollView>
 
       {/* RENDER MODALS */}
-      {renderDropdownModal("district", DISTRICT_OPTIONS, district, setDistrict)}
-      {renderDropdownModal("zone", ZONE_OPTIONS, zone, setZone)}
-      {renderDropdownModal("vendor", VENDOR_OPTIONS, vendor, setVendor)}
+      {renderDropdownModal("district", districtOptions, district, setDistrict)}
+      {renderDropdownModal("zone", zoneOptions, zone, setZone)}
+      {renderDropdownModal("vendor", vendorOptions, vendor, setVendor)}
 
     </SafeAreaView>
   );
