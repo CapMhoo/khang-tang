@@ -1,6 +1,9 @@
 import { Ionicons } from "@expo/vector-icons";
+import * as FileSystem from 'expo-file-system/legacy';
 import * as ImagePicker from "expo-image-picker";
+import * as Print from 'expo-print';
 import { useRouter } from "expo-router";
+import * as Sharing from 'expo-sharing';
 import { useEffect, useState } from "react";
 import {
   FlatList,
@@ -121,6 +124,70 @@ export default function OfficerInspectScreen() {
       </TouchableOpacity>
     </Modal>
   );
+
+  const generatePDF = async () => {
+    let base64Image = "";
+
+    if (imageUri) {
+      try {
+        // Use the legacy FileSystem to read the file
+        const base64 = await FileSystem.readAsStringAsync(imageUri, {
+          encoding: FileSystem.EncodingType.Base64, // Or "base64"
+        });
+        base64Image = `data:image/jpeg;base64,${base64}`;
+      } catch (e) {
+        console.error("Error reading image for PDF:", e);
+      }
+    }
+
+    const html = `
+      <html>
+        <head>
+          <style>
+            body { font-family: 'Helvetica'; padding: 20px; color: #333; }
+            h1 { text-align: center; color: #10B981; }
+            .card { border: 1px solid #E5E7EB; border-radius: 8px; padding: 15px; margin-bottom: 10px; }
+            .label { font-size: 10px; color: #6B7280; font-weight: bold; text-transform: uppercase; }
+            .value { font-size: 16px; margin-top: 4px; }
+            .img-container { text-align: center; margin-top: 20px; }
+            .evidence-img { width: 100%; max-height: 400px; border-radius: 12px; }
+          </style>
+        </head>
+        <body>
+          <h1>Inspection Report</h1>
+          <div class="card">
+            <p class="label">Location</p>
+            <p class="value">${district} - ${zone}</p>
+          </div>
+          <div class="card">
+            <p class="label">Vendor</p>
+            <p class="value">${vendor}</p>
+          </div>
+          <div class="card">
+            <p class="label">Scores</p>
+            <p class="value">Cleanliness: ${cleanliness}/5 | Order: ${orderliness}/5</p>
+          </div>
+          <div class="card">
+            <p class="label">Notes</p>
+            <p class="value">${notes || "No additional notes"}</p>
+          </div>
+          ${base64Image ? `
+            <div class="img-container">
+              <p class="label">Evidence Photo</p>
+              <img src="${base64Image}" class="evidence-img" />
+            </div>
+          ` : ''}
+        </body>
+      </html>
+    `;
+
+    try {
+      const { uri } = await Print.printToFileAsync({ html });
+      await Sharing.shareAsync(uri, { UTI: '.pdf', mimeType: 'application/pdf' });
+    } catch (error) {
+      alert("PDF Error: " + error.message);
+    }
+  };
 
   return (
     <SafeAreaView style={styles.container}>
@@ -246,8 +313,8 @@ export default function OfficerInspectScreen() {
 
       <View style={styles.reviewCard}>
         <Text style={styles.reviewLabel}>คะแนนการประเมิน</Text>
-        <Text style={styles.reviewValue}>✨ ความสะอาด: {cleanliness || 0}/5</Text>
-        <Text style={styles.reviewValue}>📋 ความเป็นระเบียบ: {orderliness || 0}/5</Text>
+        <Text style={styles.reviewValue}>ความสะอาด: {cleanliness || 0}/5</Text>
+        <Text style={styles.reviewValue}>ความเป็นระเบียบ: {orderliness || 0}/5</Text>
       </View>
 
       {violations.length > 0 && (
@@ -272,8 +339,18 @@ export default function OfficerInspectScreen() {
         </View>
       )}
 
+      {/* PDF EXPORT BUTTON */}
       <TouchableOpacity 
-        style={[styles.submitButton, { backgroundColor: "#1E293B", marginTop: 20 }]} 
+        style={[styles.submitButton, { backgroundColor: "#FFFFFF", borderWidth: 1, borderColor: "#10B981", marginTop: 20, flexDirection: 'row' }]} 
+        onPress={generatePDF}
+      >
+        <Ionicons name="document-text-outline" size={20} color="#10B981" style={{ marginRight: 8 }} />
+        <Text style={[styles.submitButtonText, { color: "#10B981" }]}>ตัวอย่างแบบฟอร์มคำขอ</Text>
+      </TouchableOpacity>
+
+      {/* FINAL SAVE BUTTON */}
+      <TouchableOpacity 
+        style={[styles.submitButton, { backgroundColor: "#1E293B", marginTop: 10 }]} 
         onPress={() => alert("บันทึกสำเร็จ!")}
       >
         <Text style={styles.submitButtonText}>ยืนยันและบันทึกข้อมูล</Text>
