@@ -14,7 +14,7 @@ import {
   Text,
   TextInput,
   TouchableOpacity,
-  View,
+  View
 } from "react-native";
 import { supabase } from "../../lib/supabase";
 
@@ -27,15 +27,16 @@ export default function OfficerInspectScreen() {
   const router = useRouter();
 
   // 1. ALL STATES
+  const [isReviewing, setIsReviewing] = useState(false);
   const [district, setDistrict] = useState("เลือกเขต");
   const [zone, setZone] = useState("เลือกพื้นที่ทำการค้า");
   const [vendor, setVendor] = useState("เลือกร้าน");
-  const [cleanliness, setCleanliness] = useState(null); // Removed TypeScript <number> for now to test
+  const [cleanliness, setCleanliness] = useState(null);
   const [orderliness, setOrderliness] = useState(null);
   const [violations, setViolations] = useState([]);
   const [imageUri, setImageUri] = useState(null);
   const [activeDropdown, setActiveDropdown] = useState(null);
-  const [notes, setNotes] = useState(""); // Add state for your TextInput
+  const [notes, setNotes] = useState("");
 
   const [districtOptions, setDistrictOptions] = useState([]);
   const [zoneOptions, setZoneOptions] = useState([]);
@@ -45,23 +46,16 @@ export default function OfficerInspectScreen() {
   useEffect(() => {
     const loadData = async () => {
       try {
-        console.log("Fetching from Supabase...");
-        
-        // Districts
         const { data: dData } = await supabase.from("zones").select("district");
         if (dData) {
           const unique = [...new Set(dData.map(item => item.district))].filter(Boolean);
           setDistrictOptions(unique);
         }
-
-        // Zones
         const { data: zData } = await supabase.from("zones").select("district_name");
         if (zData) {
           const unique = [...new Set(zData.map(item => item.district_name))].filter(Boolean);
           setZoneOptions(unique);
         }
-
-        // Vendors
         const { data: vData } = await supabase.from("vendors").select("first_name, last_name");
         if (vData) {
           setVendorOptions(vData.map(v => `${v.first_name} ${v.last_name}`));
@@ -70,11 +64,8 @@ export default function OfficerInspectScreen() {
         console.error("Supabase Error:", err.message);
       }
     };
-
     loadData();
   }, []);
-
-  // ... keep your violationOptions and the rest of the file exactly as it is!
 
   const violationOptions = [
     "ตั้งวางสิ่งของเกินเขตหรือนอกจุดที่กำหนด",
@@ -84,7 +75,7 @@ export default function OfficerInspectScreen() {
     "ไม่สวมผ้ากันเปื้อน/หมวกคลุมผม (กรณีอาหาร)",
   ];
 
-  const toggleViolation = (item: string) => {
+  const toggleViolation = (item) => {
     if (violations.includes(item)) {
       setViolations(violations.filter((v) => v !== item));
     } else {
@@ -108,19 +99,9 @@ export default function OfficerInspectScreen() {
     }
   };
 
-  // --- REUSABLE DROPDOWN COMPONENT ---
-  const renderDropdownModal = (type: "district" | "zone" | "vendor", options: string[], currentValue: string, setValue: (val: string) => void) => (
-    <Modal
-      visible={activeDropdown === type}
-      transparent={true}
-      animationType="fade"
-      onRequestClose={() => setActiveDropdown(null)}
-    >
-      <TouchableOpacity 
-        style={styles.modalOverlay} 
-        activeOpacity={1} 
-        onPress={() => setActiveDropdown(null)}
-      >
+  const renderDropdownModal = (type, options, currentValue, setValue) => (
+    <Modal visible={activeDropdown === type} transparent={true} animationType="fade">
+      <TouchableOpacity style={styles.modalOverlay} activeOpacity={1} onPress={() => setActiveDropdown(null)}>
         <View style={styles.modalContent}>
           <Text style={styles.modalTitle}>เลือกข้อมูล</Text>
           <FlatList
@@ -129,14 +110,9 @@ export default function OfficerInspectScreen() {
             renderItem={({ item }) => (
               <TouchableOpacity
                 style={[styles.modalOption, currentValue === item && styles.modalOptionSelected]}
-                onPress={() => {
-                  setValue(item);
-                  setActiveDropdown(null); // Close modal after selection
-                }}
+                onPress={() => { setValue(item); setActiveDropdown(null); }}
               >
-                <Text style={[styles.modalOptionText, currentValue === item && styles.modalOptionTextSelected]}>
-                  {item}
-                </Text>
+                <Text style={[styles.modalOptionText, currentValue === item && styles.modalOptionTextSelected]}>{item}</Text>
                 {currentValue === item && <Ionicons name="checkmark" size={20} color="#10B981" />}
               </TouchableOpacity>
             )}
@@ -152,126 +128,167 @@ export default function OfficerInspectScreen() {
 
       {/* HEADER */}
       <View style={styles.header}>
-        <Pressable onPress={() => router.back()} style={styles.backButton} hitSlop={10}>
+        <Pressable onPress={() => isReviewing ? setIsReviewing(false) : router.back()} style={styles.backButton}>
           <Ionicons name="chevron-back" size={26} color="#111827" />
         </Pressable>
-        <Text style={styles.headerTitle}>บันทึกการตรวจสอบ</Text>
+        <Text style={styles.headerTitle}>{isReviewing ? "ตรวจสอบข้อมูลก่อนบันทึก" : "บันทึกการตรวจสอบ"}</Text>
         <View style={styles.headerRight} />
       </View>
 
       <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.scrollContent}>
-        
-        {/* DROPDOWNS */}
-        <View style={styles.inputGroup}>
-          <Text style={styles.label}>เขตที่ทำการค้า</Text>
-          <TouchableOpacity style={styles.dropdown} onPress={() => setActiveDropdown("district")}>
-            <Text style={[styles.dropdownText, district !== "เลือกเขต" && styles.dropdownTextActive]}>{district}</Text>
-            <Ionicons name="chevron-down" size={20} color="#6B7280" />
-          </TouchableOpacity>
-        </View>
+  {!isReviewing ? (
+    <View>
+      {/* 1. DROPDOWNS (District, Zone, Vendor) */}
+      <View style={styles.inputGroup}>
+        <Text style={styles.label}>เขตที่ทำการค้า</Text>
+        <TouchableOpacity style={styles.dropdown} onPress={() => setActiveDropdown("district")}>
+          <Text style={[styles.dropdownText, district !== "เลือกเขต" && styles.dropdownTextActive]}>{district}</Text>
+          <Ionicons name="chevron-down" size={20} color="#6B7280" />
+        </TouchableOpacity>
+      </View>
 
-        <View style={styles.inputGroup}>
-          <Text style={styles.label}>พื้นที่ทำการค้า</Text>
-          <TouchableOpacity style={styles.dropdown} onPress={() => setActiveDropdown("zone")}>
-            <Text style={[styles.dropdownText, zone !== "เลือกพื้นที่ทำการค้า" && styles.dropdownTextActive]}>{zone}</Text>
-            <Ionicons name="chevron-down" size={20} color="#6B7280" />
-          </TouchableOpacity>
-        </View>
+      <View style={styles.inputGroup}>
+        <Text style={styles.label}>พื้นที่ทำการค้า</Text>
+        <TouchableOpacity style={styles.dropdown} onPress={() => setActiveDropdown("zone")}>
+          <Text style={[styles.dropdownText, zone !== "เลือกพื้นที่ทำการค้า" && styles.dropdownTextActive]}>{zone}</Text>
+          <Ionicons name="chevron-down" size={20} color="#6B7280" />
+        </TouchableOpacity>
+      </View>
 
-        <View style={styles.inputGroup}>
-          <Text style={styles.label}>ร้าน</Text>
-          <TouchableOpacity style={styles.dropdown} onPress={() => setActiveDropdown("vendor")}>
-            <Text style={[styles.dropdownText, vendor !== "เลือกร้าน" && styles.dropdownTextActive]}>{vendor}</Text>
-            <Ionicons name="chevron-down" size={20} color="#6B7280" />
-          </TouchableOpacity>
-        </View>
+      <View style={styles.inputGroup}>
+        <Text style={styles.label}>ร้าน</Text>
+        <TouchableOpacity style={styles.dropdown} onPress={() => setActiveDropdown("vendor")}>
+          <Text style={[styles.dropdownText, vendor !== "เลือกร้าน" && styles.dropdownTextActive]}>{vendor}</Text>
+          <Ionicons name="chevron-down" size={20} color="#6B7280" />
+        </TouchableOpacity>
+      </View>
 
-        {/* 1 TO 5 RATING BOXES */}
-        <View style={styles.inputGroup}>
-          <Text style={styles.label}>ความสะอาด</Text>
-          <View style={styles.ratingContainer}>
-            {[1, 2, 3, 4, 5].map((num) => (
-              <TouchableOpacity
-                key={`clean-${num}`}
-                style={[styles.ratingBox, cleanliness === num && styles.ratingBoxSelected]}
-                onPress={() => setCleanliness(num)}
-              >
-                <Text style={[styles.ratingText, cleanliness === num && styles.ratingTextSelected]}>{num}</Text>
-              </TouchableOpacity>
-            ))}
-          </View>
-        </View>
-
-        <View style={styles.inputGroup}>
-          <Text style={styles.label}>ความเป็นระเบียบเรียบร้อย</Text>
-          <View style={styles.ratingContainer}>
-            {[1, 2, 3, 4, 5].map((num) => (
-              <TouchableOpacity
-                key={`order-${num}`}
-                style={[styles.ratingBox, orderliness === num && styles.ratingBoxSelected]}
-                onPress={() => setOrderliness(num)}
-              >
-                <Text style={[styles.ratingText, orderliness === num && styles.ratingTextSelected]}>{num}</Text>
-              </TouchableOpacity>
-            ))}
-          </View>
-        </View>
-
-        {/* VIOLATION CHECKBOXES */}
-        <View style={styles.inputGroup}>
-          <Text style={styles.label}>การฝ่าฝืน (ถ้ามี)</Text>
-          {violationOptions.map((item, index) => (
-            <TouchableOpacity key={index} style={styles.checkboxContainer} onPress={() => toggleViolation(item)}>
-              <Ionicons
-                name={violations.includes(item) ? "checkbox" : "square-outline"}
-                size={24}
-                color={violations.includes(item) ? "#10B981" : "#D1D5DB"}
-              />
-              <Text style={styles.checkboxText}>{item}</Text>
+      {/* 2. RATINGS */}
+      <View style={styles.inputGroup}>
+        <Text style={styles.label}>ความสะอาด</Text>
+        <View style={styles.ratingContainer}>
+          {[1, 2, 3, 4, 5].map((num) => (
+            <TouchableOpacity key={`c-${num}`} style={[styles.ratingBox, cleanliness === num && styles.ratingBoxSelected]} onPress={() => setCleanliness(num)}>
+              <Text style={[styles.ratingText, cleanliness === num && styles.ratingTextSelected]}>{num}</Text>
             </TouchableOpacity>
           ))}
         </View>
+      </View>
 
-        {/* NOTES TEXTBOX */}
-        <View style={styles.inputGroup}>
-          <Text style={styles.label}>บันทึกเพิ่มเติม</Text>
-          <TextInput
-            style={[styles.input, styles.textArea]}
-            placeholder="เพิ่มบันทึก..."
-            placeholderTextColor="#9CA3AF"
-            multiline={true}
-            numberOfLines={3}
-            textAlignVertical="top"
-          />
+      <View style={styles.inputGroup}>
+        <Text style={styles.label}>ความเป็นระเบียบเรียบร้อย</Text>
+        <View style={styles.ratingContainer}>
+          {[1, 2, 3, 4, 5].map((num) => (
+            <TouchableOpacity key={`o-${num}`} style={[styles.ratingBox, orderliness === num && styles.ratingBoxSelected]} onPress={() => setOrderliness(num)}>
+              <Text style={[styles.ratingText, orderliness === num && styles.ratingTextSelected]}>{num}</Text>
+            </TouchableOpacity>
+          ))}
         </View>
+      </View>
 
-        {/* EVIDENCE CAMERA */}
-        <View style={styles.inputGroup}>
-          <Text style={styles.label}>หลักฐาน</Text>
-          <TouchableOpacity style={styles.uploadBox} onPress={openCamera}>
-            {imageUri ? (
-              <Image source={{ uri: imageUri }} style={styles.previewImage} />
-            ) : (
-              <>
-                <Ionicons name="camera-outline" size={32} color="#6B7280" />
-                <Text style={styles.uploadText}>แตะเพื่อถ่ายรูปหลักฐาน</Text>
-              </>
-            )}
+      {/* 3. VIOLATIONS */}
+      <View style={styles.inputGroup}>
+        <Text style={styles.label}>การฝ่าฝืน (ถ้ามี)</Text>
+        {violationOptions.map((item, index) => (
+          <TouchableOpacity key={index} style={styles.checkboxContainer} onPress={() => toggleViolation(item)}>
+            <Ionicons name={violations.includes(item) ? "checkbox" : "square-outline"} size={24} color={violations.includes(item) ? "#10B981" : "#D1D5DB"} />
+            <Text style={styles.checkboxText}>{item}</Text>
           </TouchableOpacity>
-        </View>
+        ))}
+      </View>
 
-        {/* SUBMIT BUTTON */}
-        <TouchableOpacity style={styles.submitButton}>
-          <Text style={styles.submitButtonText}>บันทึกข้อมูล</Text>
+      {/* 4. CAMERA */}
+      <View style={styles.inputGroup}>
+        <Text style={styles.label}>หลักฐาน</Text>
+        <TouchableOpacity style={styles.uploadBox} onPress={openCamera}>
+          {imageUri ? <Image source={{ uri: imageUri }} style={styles.previewImage} /> : (
+            <>
+              <Ionicons name="camera-outline" size={32} color="#6B7280" />
+              <Text style={styles.uploadText}>แตะเพื่อถ่ายรูปหลักฐาน</Text>
+            </>
+          )}
         </TouchableOpacity>
+      </View>
 
-      </ScrollView>
+      {/* 5. NOTES INPUT (Interactive here!) */}
+      <View style={styles.inputGroup}>
+        <Text style={styles.label}>บันทึกเพิ่มเติม</Text>
+        <TextInput
+          style={[styles.input, styles.textArea]}
+          placeholder="ระบุรายละเอียดเพิ่มเติม..."
+          placeholderTextColor="#9CA3AF"
+          multiline={true}
+          numberOfLines={4}
+          textAlignVertical="top"
+          value={notes}
+          onChangeText={(text) => setNotes(text)}
+        />
+      </View>
 
-      {/* RENDER MODALS */}
+      <TouchableOpacity style={styles.submitButton} onPress={() => setIsReviewing(true)}>
+        <Text style={styles.submitButtonText}>ถัดไป</Text>
+      </TouchableOpacity>
+    </View>
+  ) : (
+    /* --- REVIEW MODE (Read-only cards) --- */
+    <View>
+      <Text style={styles.reviewTitle}>สรุปข้อมูลการตรวจสอบ</Text>
+      
+      <View style={styles.reviewCard}>
+        <Text style={styles.reviewLabel}>เขต / พื้นที่ทำการค้า</Text>
+        <Text style={styles.reviewValue}>{district} — {zone}</Text>
+      </View>
+      
+      <View style={styles.reviewCard}>
+        <Text style={styles.reviewLabel}>ร้านค้าที่ตรวจสอบ</Text>
+        <Text style={styles.reviewValue}>{vendor}</Text>
+      </View>
+
+      <View style={styles.reviewCard}>
+        <Text style={styles.reviewLabel}>คะแนนการประเมิน</Text>
+        <Text style={styles.reviewValue}>✨ ความสะอาด: {cleanliness || 0}/5</Text>
+        <Text style={styles.reviewValue}>📋 ความเป็นระเบียบ: {orderliness || 0}/5</Text>
+      </View>
+
+      {violations.length > 0 && (
+        <View style={styles.reviewCard}>
+          <Text style={styles.reviewLabel}>รายการฝ่าฝืน</Text>
+          {violations.map((v, i) => (
+            <Text key={i} style={[styles.reviewValue, { color: '#EF4444', fontSize: 14 }]}>• {v}</Text>
+          ))}
+        </View>
+      )}
+
+      {/* REVIEW NOTES (Displaying the text typed earlier) */}
+      <View style={styles.reviewCard}>
+        <Text style={styles.reviewLabel}>บันทึกเพิ่มเติม</Text>
+        <Text style={styles.reviewValue}>{notes || "ไม่มีบันทึกเพิ่มเติม"}</Text>
+      </View>
+
+      {imageUri && (
+        <View style={styles.reviewCard}>
+          <Text style={styles.reviewLabel}>หลักฐานภาพถ่าย</Text>
+          <Image source={{ uri: imageUri }} style={{ width: '100%', height: 220, borderRadius: 12, marginTop: 8 }} resizeMode="cover" />
+        </View>
+      )}
+
+      <TouchableOpacity 
+        style={[styles.submitButton, { backgroundColor: "#1E293B", marginTop: 20 }]} 
+        onPress={() => alert("บันทึกสำเร็จ!")}
+      >
+        <Text style={styles.submitButtonText}>ยืนยันและบันทึกข้อมูล</Text>
+      </TouchableOpacity>
+
+      <TouchableOpacity onPress={() => setIsReviewing(false)} style={styles.backLink}>
+        <Text style={{ textAlign: 'center', color: '#6B7280', fontWeight: '600' }}>ย้อนกลับไปแก้ไข</Text>
+      </TouchableOpacity>
+    </View>
+  )}
+</ScrollView>
+
       {renderDropdownModal("district", districtOptions, district, setDistrict)}
       {renderDropdownModal("zone", zoneOptions, zone, setZone)}
       {renderDropdownModal("vendor", vendorOptions, vendor, setVendor)}
-
     </SafeAreaView>
   );
 }
@@ -350,4 +367,44 @@ const styles = StyleSheet.create({
     alignItems: "center", marginTop: 10,
   },
   submitButtonText: { fontSize: 16, fontWeight: "bold", color: "#FFFFFF" },
+
+  // --- Review Mode Styles ---
+  reviewTitle: { 
+    fontSize: 20, 
+    fontWeight: "800", 
+    color: "#111827", 
+    marginBottom: 20,
+    marginTop: 5 
+  },
+  reviewCard: { 
+    backgroundColor: "#FFFFFF", 
+    padding: 16, 
+    borderRadius: 12, 
+    marginBottom: 12,
+    borderWidth: 1,
+    borderColor: "#E5E7EB",
+    // Add a slight shadow for that Figma look
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.05,
+    shadowRadius: 2,
+    elevation: 2,
+  },
+  reviewLabel: { 
+    fontSize: 12, 
+    fontWeight: "600", 
+    color: "#6B7280", 
+    textTransform: "uppercase", 
+    letterSpacing: 0.5,
+    marginBottom: 4 
+  },
+  reviewValue: { 
+    fontSize: 16, 
+    color: "#111827", 
+    fontWeight: "500" 
+  },
+  backLink: {
+    paddingVertical: 15,
+    marginTop: 5,
+  },
 });
