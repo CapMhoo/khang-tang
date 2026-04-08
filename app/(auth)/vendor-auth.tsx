@@ -596,7 +596,7 @@ const styles = StyleSheet.create({
   mainBtn: {
     width: "100%",
     height: 56,
-    backgroundColor: "#64748B", // สีเทาเข้มตามในแบบ
+    backgroundColor: "#205a41", // สีเทาเข้มตามในแบบ
     borderRadius: 8,
     justifyContent: "center",
     alignItems: "center",

@@ -19,11 +19,11 @@ export default function IndexPage() {
 
   return (
     <SafeAreaView style={styles.container}>
-      <StatusBar barStyle="dark-content" />
+      {/* Set status bar to light because background is dark */}
+      <StatusBar barStyle="light-content" />
 
       <View style={styles.innerContainer}>
         <View style={styles.titleContainer}>
-          {/* ใช้ Sao Chingcha สำหรับหัวข้อหลัก */}
           <Text style={styles.mainTitle}>เลือกประเภทผู้ใช้งาน</Text>
         </View>
 
@@ -31,7 +31,8 @@ export default function IndexPage() {
           <RoleOption
             title="ผู้ค้า"
             description="ลงทะเบียนร้านค้า จองพื้นที่ขาย เช็คอิน-เช็คเอาท์รายวัน"
-            icon={<FontAwesome5 name="store" size={24} color="#64748B" />}
+            icon={<FontAwesome5 name="store" size={32} color="white" />}
+            iconBg="#7B39B2" // Purple
             onPress={() => router.push("/(auth)/vendor-auth")}
           />
 
@@ -40,18 +41,20 @@ export default function IndexPage() {
             description="ตรวจสอบความถูกต้องเรียบร้อย"
             icon={
               <MaterialCommunityIcons
-                name="shield-check"
-                size={30}
-                color="#64748B"
+                name="badge-account-horizontal"
+                size={36}
+                color="white"
               />
             }
+            iconBg="#006D44" // Deep Green
             onPress={() => router.push("/officer-auth")}
           />
 
           <RoleOption
             title="ประชาชนทั่วไป"
             description="ดูแผนที่โซนค้าขาย แจ้งปัญหา"
-            icon={<Ionicons name="people" size={30} color="#64748B" />}
+            icon={<Ionicons name="location" size={36} color="white" />}
+            iconBg="#FFB156" // Orange
             onPress={() => console.log("Public Selected")}
           />
         </View>
@@ -60,15 +63,15 @@ export default function IndexPage() {
   );
 }
 
-const RoleOption = ({ title, description, icon, onPress }: any) => (
+const RoleOption = ({ title, description, icon, iconBg, onPress }: any) => (
   <Pressable
     onPress={onPress}
     style={({ pressed }) => [
       styles.card,
-      pressed && { backgroundColor: "#F8FAFC", transform: [{ scale: 0.98 }] },
+      pressed && { opacity: 0.9, transform: [{ scale: 0.98 }] },
     ]}
   >
-    <View style={styles.iconSquare}>{icon}</View>
+    <View style={[styles.iconSquare, { backgroundColor: iconBg }]}>{icon}</View>
 
     <View style={styles.textContainer}>
       <Text style={styles.cardTitle}>{title}</Text>
@@ -80,42 +83,36 @@ const RoleOption = ({ title, description, icon, onPress }: any) => (
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: "#F1F5F9",
+    backgroundColor: "#0C4B33", // Deep BMA Green from photo
   },
   innerContainer: {
     flex: 1,
-    paddingHorizontal: 24,
+    paddingHorizontal: 20,
     justifyContent: "center",
   },
   titleContainer: {
     alignItems: "center",
-    marginBottom: 48,
+    marginBottom: 40,
   },
   mainTitle: {
-    fontFamily: "SaoChingcha-Bold", // <--- ฟอนต์เสาชิงช้า
-    fontSize: 34,
-    color: "#0F172A",
+    fontSize: 28,
+    fontWeight: "bold",
+    color: "white",
     textAlign: "center",
   },
   listGap: {
-    gap: 20,
+    gap: 16,
   },
   card: {
     flexDirection: "row",
     alignItems: "center",
     backgroundColor: "white",
     padding: 20,
-    borderRadius: 28,
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 10 },
-    shadowOpacity: 0.05,
-    shadowRadius: 20,
-    elevation: 4,
+    borderRadius: 16, // Smoother corners per photo
   },
   iconSquare: {
-    width: 72,
-    height: 72,
-    backgroundColor: "#E2E8F0",
+    width: 80,
+    height: 80,
     borderRadius: 20,
     alignItems: "center",
     justifyContent: "center",
@@ -123,19 +120,19 @@ const styles = StyleSheet.create({
   },
   textContainer: {
     flex: 1,
+    justifyContent: "center",
   },
   cardTitle: {
-    fontFamily: "Anuphan-Bold", // <--- ฟอนต์อนุพัณฑ์ (หนา)
-    fontSize: 20,
-    color: "#1E293B",
-    textAlign: "center",
+    fontSize: 22,
+    fontWeight: "bold",
+    color: "#000",
     marginBottom: 4,
+    textAlign: "left", // Changed to left to match image
   },
   cardDescription: {
-    fontFamily: "Anuphan-Regular", // <--- ฟอนต์อนุพัณฑ์ (ปกติ)
-    fontSize: 14,
-    color: "#64748B",
-    textAlign: "center",
-    lineHeight: 20,
+    fontSize: 15,
+    color: "#333",
+    lineHeight: 22,
+    textAlign: "left", // Changed to left to match image
   },
 });

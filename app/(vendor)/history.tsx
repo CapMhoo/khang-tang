@@ -146,11 +146,7 @@ export default function CheckInHistory() {
             vendorData && (
               <View style={styles.vendorCard}>
                 <Image
-                  source={{
-                    uri:
-                      vendorData[0].shop_image ||
-                      "../../assets/images/shop.png",
-                  }}
+                  source={require("../../assets/images/shop.png")} // ✅ Correct way for local files
                   style={styles.vendorImage}
                 />
                 <View style={styles.vendorInfo}>

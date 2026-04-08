@@ -18,6 +18,7 @@ import {
 import { supabase } from "../../lib/supabase";
 
 export default function VendorDashboard() {
+  const [showScoreInfo, setShowScoreInfo] = useState(false);
   const [uploading, setUploading] = useState(false);
   const { vendorId } = useLocalSearchParams(); // Get the ID from the URL
   const [isCheckedIn, setIsCheckedIn] = useState(false);
@@ -489,9 +490,7 @@ export default function VendorDashboard() {
         {/* 2. Shop Info Card */}
         <View style={styles.shopCardClean}>
           <Image
-            source={{
-              uri: contractData?.shop_image || "../../assets/images/shop.png",
-            }}
+            source={require("../../assets/images/shop.png")} // ✅ Correct way for local files
             style={styles.shopImageSmall}
           />
           <View style={styles.shopDetail}>
@@ -569,6 +568,18 @@ export default function VendorDashboard() {
 
         {/* 5. Score Section */}
         <View style={styles.scoreCard}>
+          {/* Add the info button here */}
+          <TouchableOpacity
+            style={styles.infoButton}
+            onPress={() => setShowScoreInfo(true)} // Change this line
+          >
+            <Ionicons
+              name="information-circle-outline"
+              size={22}
+              color="#999"
+            />
+          </TouchableOpacity>
+
           <Text style={styles.scoreHeader}>คะแนนร้านค้า</Text>
           <View style={styles.scoreCircleContainer}>
             <View style={styles.progressRing}>
@@ -577,10 +588,17 @@ export default function VendorDashboard() {
             </View>
           </View>
           <View style={styles.statusMessageBar}>
-            <Text style={styles.statusMessageText}>status messages</Text>
+            <Text style={styles.statusMessageText}>ดีเยี่ยม</Text>
           </View>
         </View>
       </ScrollView>
+      {/* Floating Chat Button */}
+      <TouchableOpacity
+        style={styles.floatingChatButton}
+        onPress={() => console.log("Open Chatbot")}
+      >
+        <Ionicons name="chatbubble-ellipses" size={28} color="white" />
+      </TouchableOpacity>
       <Modal
         transparent={true}
         visible={showMenu}
@@ -606,11 +624,175 @@ export default function VendorDashboard() {
           </View>
         </TouchableOpacity>
       </Modal>
+      {/* Score Criteria Modal */}
+      <Modal
+        transparent={true}
+        visible={showScoreInfo}
+        animationType="fade"
+        onRequestClose={() => setShowScoreInfo(false)}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={styles.scoreInfoContent}>
+            {/* Close Button */}
+            <TouchableOpacity
+              style={styles.closeModalBtn}
+              onPress={() => setShowScoreInfo(false)}
+            >
+              <Ionicons name="close-circle" size={28} color="#CCC" />
+            </TouchableOpacity>
+
+            <Text style={styles.infoTitle}>
+              เกณฑ์การประเมินคะแนนผู้ค้าแผงลอย
+            </Text>
+
+            <Text style={styles.infoSubtitle}>
+              คะแนนรวมจะถูกคำนวณจาก 3 ส่วนหลัก:
+            </Text>
+            <View style={styles.infoList}>
+              <Text style={styles.infoItem}>
+                1. การตรวจสอบสุขาภิบาล: ความสะอาดพื้นที่และภาชนะ
+              </Text>
+              <Text style={styles.infoItem}>
+                2. การปฏิบัติตามกฎระเบียบ: ความถูกต้องสถานที่/เวลาขาย
+              </Text>
+              <Text style={styles.infoItem}>
+                3. การปฏิบัติตามข้อกำหนด: การเช็คอิน/เอาท์ตรงเวลา
+              </Text>
+            </View>
+
+            <View style={styles.scoreRangeRow}>
+              <Text style={[styles.rangeText, { color: "#00875A" }]}>
+                คะแนนมากกว่า 80: ดีเยี่ยม
+              </Text>
+              <Text style={styles.rangeDesc}>
+                • ปฏิบัติตามกฎอย่างเคร่งครัด รักษาความสะอาดตามมาตรฐาน
+              </Text>
+            </View>
+
+            <View style={styles.scoreRangeRow}>
+              <Text style={[styles.rangeText, { color: "#E2B100" }]}>
+                คะแนน 60 - 79: พอใช้
+              </Text>
+              <Text style={styles.rangeDesc}>
+                • ปฏิบัติกฎส่วนใหญ่ แต่อาจมีข้อบกพร่องเล็กน้อย
+              </Text>
+            </View>
+
+            <View style={styles.scoreRangeRow}>
+              <Text style={[styles.rangeText, { color: "#FF3B30" }]}>
+                คะแนนน้อยกว่า 60: ควรปรับปรุง
+              </Text>
+              <Text style={styles.rangeDesc}>
+                • ไม่ปฏิบัติตามเกณฑ์ขั้นต่ำ และได้รับข้อร้องเรียนบ่อยครั้ง
+              </Text>
+            </View>
+          </View>
+        </View>
+      </Modal>
     </View>
   );
 }
 
 const styles = StyleSheet.create({
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: "rgba(0, 0, 0, 0.5)", // Dim the background
+    justifyContent: "center", // Center vertically
+    alignItems: "center", // Center horizontally
+  },
+  scoreInfoContent: {
+    width: "85%", // Slightly narrower for better aesthetics
+    maxHeight: "80%", // Prevents content from bleeding off screen on small phones
+    backgroundColor: "white",
+    borderRadius: 20,
+    padding: 25,
+    position: "relative",
+    // Optional: Add a shadow for depth
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.25,
+    shadowRadius: 4,
+    elevation: 5,
+  },
+  closeModalBtn: {
+    position: "absolute",
+    top: 10,
+    right: 10,
+    zIndex: 10,
+  },
+  infoTitle: {
+    fontSize: 18,
+    fontWeight: "bold",
+    marginBottom: 15,
+    color: "#333",
+    paddingRight: 20, // Space for close button
+  },
+  infoSubtitle: {
+    fontSize: 14,
+    color: "#666",
+    marginBottom: 10,
+  },
+  infoList: {
+    marginBottom: 20,
+  },
+  infoItem: {
+    fontSize: 14,
+    color: "#333",
+    marginBottom: 5,
+    lineHeight: 20,
+  },
+  scoreRangeRow: {
+    marginBottom: 15,
+    borderTopWidth: 1,
+    borderTopColor: "#F0F0F0",
+    paddingTop: 10,
+  },
+  rangeText: {
+    fontWeight: "bold",
+    fontSize: 15,
+    marginBottom: 4,
+  },
+  rangeDesc: {
+    fontSize: 13,
+    color: "#666",
+    lineHeight: 18,
+  },
+  infoButton: {
+    position: "absolute",
+    right: 15,
+    top: 15,
+    zIndex: 1,
+  },
+
+  // --- Floating Chat Button ---
+  floatingChatButton: {
+    position: "absolute",
+    bottom: 30,
+    right: 20,
+    backgroundColor: "#7B4DFF", // Purple color like in your design
+    width: 60,
+    height: 60,
+    borderRadius: 30,
+    justifyContent: "center",
+    alignItems: "center",
+    // Shadow for iOS
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 4.65,
+    // Elevation for Android
+    elevation: 8,
+  },
+
+  // Ensure your scoreCard has position relative
+  scoreCard: {
+    backgroundColor: "#FFF",
+    borderRadius: 15,
+    padding: 20,
+    marginVertical: 10,
+    position: "relative", // Required for absolute positioning of infoButton
+    alignItems: "center",
+  },
   checkOutPrompt: {
     marginTop: 15,
     paddingTop: 15,
@@ -690,12 +872,6 @@ const styles = StyleSheet.create({
   },
   historyLinkText: { fontWeight: "bold", fontSize: 16 },
 
-  scoreCard: {
-    backgroundColor: "white",
-    borderRadius: 15,
-    padding: 20,
-    alignItems: "center",
-  },
   scoreHeader: { fontWeight: "bold", fontSize: 16, marginBottom: 15 },
   progressRing: {
     width: 150,
@@ -932,10 +1108,10 @@ const styles = StyleSheet.create({
     fontWeight: "bold",
     color: "#000",
   },
-  modalOverlay: {
-    flex: 1,
-    backgroundColor: "transparent", // หรือ 'rgba(0,0,0,0.1)' ถ้าอยากให้ฉากหลังมืดลงนิดนึง
-  },
+  // modalOverlay: {
+  //   flex: 1,
+  //   backgroundColor: "transparent", // หรือ 'rgba(0,0,0,0.1)' ถ้าอยากให้ฉากหลังมืดลงนิดนึง
+  // },
   safeAreaTop: {
     // สำหรับ iOS เราจะใช้ค่าประมาณ 44-47 (หรือใช้คลังแสงจริงถ้าลง safe-area-context)
     // สำหรับ Android ใช้ StatusBar.currentHeight
