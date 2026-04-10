@@ -112,6 +112,22 @@ export default function VendorAuth() {
           throw new Error("โปรดกรอกข้อมูลการสมัครสมาชิกให้ครบถ้วน");
         }
 
+        // 1. ตรวจสอบรูปแบบอีเมล (Email Format Validation)
+        const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+        if (!emailRegex.test(form.email)) {
+          throw new Error("รูปแบบอีเมลไม่ถูกต้อง");
+        }
+
+        // 2. ตรวจสอบชื่อและนามสกุล (Thai and English alphabets only)
+        // This regex allows Thai characters, English letters, and spaces
+        const nameRegex = /^[a-zA-Zก-๙\s]+$/;
+        if (!nameRegex.test(form.firstName)) {
+          throw new Error("ชื่อต้องเป็นตัวอักษรเท่านั้น");
+        }
+        if (!nameRegex.test(form.lastName)) {
+          throw new Error("นามสกุลต้องเป็นตัวอักษรเท่านั้น");
+        }
+
         if (form.password.length < 8) {
           throw new Error("รหัสผ่านต้องมีความยาวอย่างน้อย 8 ตัวอักษร");
         }
