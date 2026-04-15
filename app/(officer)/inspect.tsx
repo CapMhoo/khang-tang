@@ -511,9 +511,11 @@ export default function OfficerInspectScreen() {
         </Text>
       </TouchableOpacity>
 
+      {/* Back
       <TouchableOpacity style={styles.backLink} onPress={() => setIsReviewing(false)}>
         <Text style={styles.backLinkText}>ย้อนกลับไปแก้ไข</Text>
       </TouchableOpacity>
+      */}
     </View>
   );
 
