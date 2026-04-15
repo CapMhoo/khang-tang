@@ -142,7 +142,7 @@ export default function OfficerInspectScreen() {
             h1 { text-align: center; color: #10B981; font-size: 22px; margin-bottom: 24px; }
             .card { border: 1px solid #E5E7EB; border-radius: 8px; padding: 14px 16px; margin-bottom: 12px; }
             .label { font-size: 10px; color: #6B7280; font-weight: bold; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 4px; }
-            .value { font-size: 15px; color: #111827; }
+            .value { font-size: 15px; color: #111827 }
             .value-bad { color: #EF4444; }
             .img-row { display: flex; gap: 10px; flex-wrap: wrap; margin-top: 10px; }
             .evidence-img { width: 48%; border-radius: 10px; }
@@ -590,13 +590,13 @@ function ReviewRow({ label, value }: { label: string; value: string }) {
   );
 }
 const reviewRowStyles = StyleSheet.create({
-  label: { fontSize: 12, color: "#6B7280", marginBottom: 2 },
+  label: { fontSize: 12, color: "#6B7280", marginBottom: 2, fontWeight: "800" },
   value: { fontSize: 15, color: "#111827", fontWeight: "500" },
 });
 
 // ─── styles ───────────────────────────────────────────────────────────────
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: "#F3F4F6" },
+  container: { flex: 1, backgroundColor: "#F1F5F9" },
   header: {
     flexDirection: "row",
     alignItems: "center",
@@ -645,7 +645,7 @@ const styles = StyleSheet.create({
   checkinRow: { flexDirection: "row" },
   checkinBlock: { flex: 1 },
   checkinDividerV: { width: 1, backgroundColor: "#E5E7EB", marginHorizontal: 16 },
-  checkinLabel: { fontSize: 12, color: "#6B7280", marginBottom: 2 },
+  checkinLabel: { fontSize: 12, fontWeight: "600", color: "#6B7280", marginBottom: 2 },
   checkinTime: { fontSize: 16, fontWeight: "600", color: "#111827" },
 
   // ── Sections ──
@@ -662,7 +662,7 @@ const styles = StyleSheet.create({
     marginBottom: 10,
   },
   ratingHints: { flexDirection: "row", justifyContent: "space-between", marginTop: 6 },
-  ratingHintText: { fontSize: 11, color: "#9CA3AF" },
+  ratingHintText: { fontSize: 11, color: "#64748B" },
   ratingRow: { flexDirection: "row", gap: 8 },
   ratingBox: {
     flex: 1,
@@ -736,9 +736,9 @@ const styles = StyleSheet.create({
 
   // ── Buttons ──
   primaryBtn: {
-    backgroundColor: "#1C6B48",
-    borderRadius: 12,
-    paddingVertical: 16,
+    backgroundColor: "#225A41",
+    borderRadius: 10,
+    paddingVertical: 12,
     alignItems: "center",
     justifyContent: "center",
     flexDirection: "row",
@@ -766,13 +766,18 @@ const styles = StyleSheet.create({
   reviewValue: { fontSize: 15, color: "#111827", fontWeight: "500", marginTop: 2 },
   violationText: { color: "#EF4444", fontSize: 14 },
   pdfLink: {
+    backgroundColor: "white",
+    borderWidth: 1,
+    borderColor: "#E5E7EB",
+    borderRadius: 10,
+    paddingVertical: 12,
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "center",
     gap: 6,
-    paddingVertical: 14,
+    marginTop: 8
   },
-  pdfLinkText: { fontSize: 14, color: "#6B7280", fontWeight: "500" },
+  pdfLinkText: { fontSize: 16, color: "#475569", fontWeight: "400" },
   backLink: { paddingVertical: 14, alignItems: "center" },
   backLinkText: { fontSize: 14, color: "#6B7280", fontWeight: "600" },
 
