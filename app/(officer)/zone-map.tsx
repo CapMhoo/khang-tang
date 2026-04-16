@@ -29,6 +29,7 @@ const { height: SCREEN_HEIGHT } = Dimensions.get("window");
 type ZoneVendor = {
   id: string;
   name: string;
+  vendorName: string; // <-- added: full name of the vendor person
   checkInTime?: string;
   checkOutTime?: string;
   inspected?: boolean;
@@ -92,7 +93,6 @@ export default function ZoneMapScreen() {
   );
   const [selectedZoneId, setSelectedZoneId] = useState<string | null>(null);
 
-  // Keep the map dominant; sheets should feel compact.
   const SHEET_HEIGHT = SCREEN_HEIGHT * 0.38;
   const SHEET_PEEK = 72;
   const SHEET_COLLAPSED_Y = SHEET_HEIGHT - SHEET_PEEK;
@@ -212,18 +212,15 @@ export default function ZoneMapScreen() {
               ? "#F79432"
               : "#34C759";
 
-        // const timeRange = `${z.time_start ?? "—"}-${z.time_end ?? "—"} น.`;
-        const district = (z.district_name as string | null) ?? "ไม่ระบุเขต";
-
         const start = z.time_start ? z.time_start.substring(0, 5) : "—";
         const end = z.time_end ? z.time_end.substring(0, 5) : "—";
         const timeRange = `${start}-${end} น.`;
 
         return {
           id: String(z.id),
-          name: z.district_name || "ไม่ระบุชื่อโซน", // Specific zone name (e.g., Ari Soi 1)
-          district: z.district || "ไม่ระบุเขต", // Larger scope (e.g., Phaya Thai)
-          timeRange, // Now it will be "08:00-00:00 น."
+          name: z.district_name || "ไม่ระบุชื่อโซน",
+          district: z.district || "ไม่ระบุเขต",
+          timeRange,
           currentShops: current,
           totalShops: total,
           color,
@@ -413,6 +410,11 @@ export default function ZoneMapScreen() {
     setPhotoViewer({ uri, label });
   };
 
+  // 1. STATE DEFINITIONS
+  // Ensure these are at the top of your ZoneMapScreen component
+  const [showDistrictModal, setShowDistrictModal] = useState(false);
+
+  // 2. THE FULL REFACTORED FUNCTION
   const ensureZoneDetails = async (zoneId: string) => {
     if (zoneDetailsLoadingById[zoneId]) return;
 
@@ -421,115 +423,175 @@ export default function ZoneMapScreen() {
 
     try {
       const todayYmd = getTodayYmdLocal();
-      const offsetMinutes = -new Date().getTimezoneOffset();
-      const sign = offsetMinutes >= 0 ? "+" : "-";
-      const abs = Math.abs(offsetMinutes);
-      const hh = String(Math.floor(abs / 60)).padStart(2, "0");
-      const mm = String(abs % 60).padStart(2, "0");
-      const offset = `${sign}${hh}:${mm}`;
-      const startTs = `${todayYmd}T00:00:00${offset}`;
-      const endTs = `${todayYmd}T23:59:59.999${offset}`;
 
+      // TIMEZONE FIX:
+      // Your DB stores in UTC (+00). Thailand is +07.
+      // We create a wide 36-hour window around "now" to ensure
+      // UTC date-shifting doesn't hide today's records.
+      const now = new Date();
+      const startOfQuery = new Date(now);
+      startOfQuery.setHours(now.getHours() - 12); // Buffer back 12 hours
+
+      const endOfQuery = new Date(now);
+      endOfQuery.setHours(now.getHours() + 24); // Buffer forward 24 hours
+
+      console.log("--- DEBUG START: ensureZoneDetails ---");
+      console.log("Zone ID:", zoneId);
+      console.log("Today's Date (YMD):", todayYmd);
+      console.log(
+        "Query Window (ISO):",
+        startOfQuery.toISOString(),
+        "to",
+        endOfQuery.toISOString(),
+      );
+
+      // 1. Fetch active contracts for this zone
       const { data: activeContracts, error: activeContractsError } =
         await supabase
           .from("contracts")
           .select(
-            "id, vendor_id, shop_name, status, start_date, end_date, vendors(first_name, last_name)",
+            `
+            id, 
+            vendor_id, 
+            shop_name, 
+            status, 
+            start_date, 
+            end_date, 
+            vendors(first_name, last_name)
+          `,
           )
           .eq("zone_id", zoneId)
           .eq("status", "active");
 
       if (activeContractsError) throw activeContractsError;
 
+      // Filter for contracts valid today
       const activeContractsToday = (activeContracts ?? []).filter((c: any) => {
-        const start = (c.start_date as string | null) ?? null;
-        const end = (c.end_date as string | null) ?? null;
-        const startOk = !start || start <= todayYmd;
-        const endOk = !end || end >= todayYmd;
-        return startOk && endOk;
+        const start = c.start_date;
+        const end = c.end_date;
+        return (!start || start <= todayYmd) && (!end || end >= todayYmd);
       });
 
-      const vendorIds = Array.from(
-        new Set(activeContractsToday.map((c: any) => String(c.vendor_id))),
-      ).filter(Boolean);
-
-      const { data: checkins, error: checkinsError } = vendorIds.length
-        ? await supabase
-            .from("daily_checkins")
-            .select("vendor_id, checkin_time, checkout_time")
-            .in("vendor_id", vendorIds)
-            .gte("checkin_time", startTs)
-            .lte("checkin_time", endTs)
-            .order("checkin_time", { ascending: false })
-        : { data: [], error: null };
-
-      if (checkinsError) throw checkinsError;
-
-      const latestCheckinByVendorId = new Map<
-        string,
-        { checkin_time: string; checkout_time?: string | null }
-      >();
-      for (const ci of checkins ?? []) {
-        const vid = String((ci as any).vendor_id);
-        if (!latestCheckinByVendorId.has(vid)) {
-          latestCheckinByVendorId.set(vid, {
-            checkin_time: (ci as any).checkin_time,
-            checkout_time: (ci as any).checkout_time,
-          });
-        }
-      }
+      console.log(
+        "Active contracts for today:",
+        activeContractsToday.length,
+        "out of",
+        activeContracts?.length || 0,
+      );
 
       const contractIds = activeContractsToday
         .map((c: any) => String(c.id))
         .filter(Boolean);
+      const vendorIds = activeContractsToday
+        .map((c: any) => String(c.vendor_id))
+        .filter(Boolean);
 
-      const inspectedContractIds = new Set<string>();
-      if (contractIds.length) {
-        for (let i = 0; i < contractIds.length; i += 200) {
-          const ids = contractIds.slice(i, i + 200);
-          const { data, error } = await supabase
-            .from("inspections")
-            .select("contract_id, created_at")
-            .in("contract_id", ids)
-            .gte("created_at", startTs)
-            .lte("created_at", endTs)
-            .range(0, 9999);
-          if (error) throw error;
-          for (const row of data ?? []) {
-            const cid = String((row as any).contract_id ?? "");
-            if (cid) inspectedContractIds.add(cid);
-          }
-        }
+      if (contractIds.length === 0) {
+        console.log("No active contracts found for today.");
+        setVendorsByZoneId((prev) => ({ ...prev, [zoneId]: [] }));
+        return;
       }
 
-      const vendors: ZoneVendor[] = activeContractsToday.map((c: any) => {
-        const vendorId = String(c.vendor_id);
-        const first = c.vendors?.first_name ?? "";
-        const last = c.vendors?.last_name ?? "";
-        const vendorName = `${first} ${last}`.trim();
+      console.log("🔍 CONTRACT IDS TO QUERY:", JSON.stringify(contractIds));
+      console.log("🔍 INSPECTION QUERY WINDOW:", {
+        gte: startOfQuery.toISOString(),
+        lte: endOfQuery.toISOString(),
+      });
 
-        const latest = latestCheckinByVendorId.get(vendorId);
-        const checkInTime = formatTimeHHmm(latest?.checkin_time);
-        const checkOutTime = formatTimeHHmm(latest?.checkout_time ?? undefined);
+      // 2. Fetch checkins and inspections within the buffered window
+      const [checkinsRes, inspectionsRes] = await Promise.all([
+        supabase
+          .from("daily_checkins")
+          .select("vendor_id, checkin_time, checkout_time")
+          .in("vendor_id", vendorIds)
+          .gte("checkin_time", startOfQuery.toISOString())
+          .lte("checkin_time", endOfQuery.toISOString()),
+        supabase
+          .from("inspections")
+          .select("contract_id, inspection_time")
+          .in("contract_id", contractIds)
+          .gte("inspection_time", startOfQuery.toISOString())
+          .lte("inspection_time", endOfQuery.toISOString()),
+      ]);
+
+      console.log("🔍 INSPECTION QUERY RESPONSE:");
+      console.log(
+        "  - Error:",
+        inspectionsRes.error ? inspectionsRes.error.message : "none",
+      );
+      console.log("  - Data Count:", inspectionsRes.data?.length || 0);
+      console.log(
+        "  - Status:",
+        inspectionsRes.status,
+        inspectionsRes.statusText,
+      );
+
+      console.log("Inspections Found in DB:", inspectionsRes.data?.length || 0);
+      if (inspectionsRes.data) {
+        console.log(
+          "DB Inspection Sample:",
+          JSON.stringify(inspectionsRes.data[0], null, 2),
+        );
+        console.log(
+          "All Inspection Contract IDs:",
+          inspectionsRes.data.map((i) => i.contract_id),
+        );
+      }
+
+      // 3. Create lookups for mapping
+      const inspectedContractIds = new Set(
+        (inspectionsRes.data ?? []).map((i) => String(i.contract_id)),
+      );
+
+      console.log("Contract IDs from active contracts today:", contractIds);
+      console.log(
+        "Contract IDs that have inspections:",
+        Array.from(inspectedContractIds),
+      );
+
+      const latestCheckinByVendorId = new Map();
+      (checkinsRes.data ?? []).forEach((ci) => {
+        latestCheckinByVendorId.set(String(ci.vendor_id), ci);
+      });
+
+      // 4. Map the data to the UI format (ZoneVendor type)
+      const vendors: ZoneVendor[] = activeContractsToday.map((c: any) => {
+        const vid = String(c.vendor_id);
+        const cid = String(c.id);
+        const latest = latestCheckinByVendorId.get(vid);
+
+        const isInspected = inspectedContractIds.has(cid);
+
+        console.log(
+          `Vendor: ${c.shop_name}, contractId: ${cid}, inspected: ${isInspected}, isInInspectedSet: ${inspectedContractIds.has(cid)}`,
+        );
 
         return {
-          id: vendorId,
+          id: vid,
           name:
-            (c.shop_name as string | null | undefined) ||
-            vendorName ||
-            vendorId,
-          checkInTime,
-          checkOutTime,
-          inspected: inspectedContractIds.has(String(c.id)),
+            c.shop_name?.trim() ||
+            `${c.vendors?.first_name} ${c.vendors?.last_name}`.trim(),
+          vendorName: `${c.vendors?.first_name} ${c.vendors?.last_name}`.trim(),
+          checkInTime: formatTimeHHmm(latest?.checkin_time),
+          checkOutTime: formatTimeHHmm(latest?.checkout_time),
+          inspected: isInspected, // Displays "ตรวจแล้ว" if true
         };
       });
 
+      console.log(
+        "Final UI Labels:",
+        vendors.map(
+          (v) =>
+            `${v.name}: inspected=${v.inspected}, contractId match=${activeContractsToday.find((c: any) => String(c.vendor_id) === v.id)?.id}`,
+        ),
+      );
+      console.log("Full Vendor Data:", JSON.stringify(vendors, null, 2));
+      console.log("--- DEBUG END: ensureZoneDetails ---");
+
       setVendorsByZoneId((prev) => ({ ...prev, [zoneId]: vendors }));
     } catch (err: any) {
-      const message =
-        err?.message ?? "เกิดข้อผิดพลาดในการโหลดข้อมูลร้านค้าในโซนนี้";
-      setZoneDetailsErrorById((prev) => ({ ...prev, [zoneId]: message }));
-      setVendorsByZoneId((prev) => ({ ...prev, [zoneId]: [] }));
+      console.error("Critical error in ensureZoneDetails:", err);
+      setZoneDetailsErrorById((prev) => ({ ...prev, [zoneId]: err.message }));
     } finally {
       setZoneDetailsLoadingById((prev) => ({ ...prev, [zoneId]: false }));
     }
@@ -621,6 +683,19 @@ export default function ZoneMapScreen() {
     transform: [{ translateY: storeSheetTranslateY.value }],
   }));
 
+  // Helper: build the sub-line text for a vendor card
+  const buildVendorSub = (v: ZoneVendor): string => {
+    const parts: string[] = [];
+    if (v.vendorName) parts.push(v.vendorName);
+    if (v.checkInTime) {
+      parts.push(`เช็คอิน ${v.checkInTime}`);
+    }
+    if (v.checkOutTime) {
+      parts.push(`เช็คเอาท์ ${v.checkOutTime}`);
+    }
+    return parts.join(" · ") || "—";
+  };
+
   const Header = (
     <SafeAreaView
       style={activeTab === "map" ? styles.overlayTop : styles.headerBlock}
@@ -639,7 +714,6 @@ export default function ZoneMapScreen() {
 
         <Pressable onPress={cycleDistrict} style={styles.districtPill}>
           <Text style={styles.districtText}>
-            {/* If "ทั้งหมด" show that, otherwise show "เขต" + the larger district name */}
             {selectedDistrict === "ทั้งหมด"
               ? "เขตทั้งหมด"
               : `เขต${selectedDistrict}`}
@@ -791,7 +865,6 @@ export default function ZoneMapScreen() {
                   </Pressable>
                 </View>
 
-                {/* Meta Row (Time and Count) */}
                 <View style={styles.zoneMetaRow}>
                   <View style={styles.metaItem}>
                     <Ionicons name="time-outline" size={18} color="#374151" />
@@ -852,10 +925,7 @@ export default function ZoneMapScreen() {
                       <View style={styles.vendorCardLeft}>
                         <Text style={styles.vendorTitle}>{v.name}</Text>
                         <Text style={styles.vendorSub}>
-                          เช็คอิน {v.checkInTime ?? "—"}
-                          {v.checkOutTime
-                            ? ` · เช็คเอาท์ ${v.checkOutTime}`
-                            : ""}
+                          {buildVendorSub(v)}
                         </Text>
                       </View>
 
@@ -891,7 +961,6 @@ export default function ZoneMapScreen() {
                         snapSheetTo(0);
                       }}
                     >
-                      {/* The Dot Indicator (Green/Orange/Red) */}
                       <View
                         style={[
                           styles.zoneDot,
@@ -900,14 +969,10 @@ export default function ZoneMapScreen() {
                       />
 
                       <View style={styles.zoneRowInfo}>
-                        {/* EDIT: Use zone.name (Specific Soi/Market name) */}
                         <Text style={styles.zoneRowName}>{zone.name}</Text>
-
-                        {/* EDIT: Use zone.timeRange (Formatted HH:mm) */}
                         <Text style={styles.zoneRowSub}>{zone.timeRange}</Text>
                       </View>
 
-                      {/* The Occupancy Count (e.g., 4/12) */}
                       <Text style={styles.zoneRowCount}>
                         {zone.currentShops}/{zone.totalShops}
                       </Text>
@@ -1014,10 +1079,7 @@ export default function ZoneMapScreen() {
                           <View style={styles.vendorCardLeft}>
                             <Text style={styles.vendorTitle}>{v.name}</Text>
                             <Text style={styles.vendorSub}>
-                              เช็คอิน {v.checkInTime ?? "—"}
-                              {v.checkOutTime
-                                ? ` · เช็คเอาท์ ${v.checkOutTime}`
-                                : ""}
+                              {buildVendorSub(v)}
                             </Text>
                           </View>
 
@@ -1528,18 +1590,18 @@ const styles = StyleSheet.create({
   statusChecked: {
     flexDirection: "row",
     alignItems: "center",
-    gap: 4, // Spaces the checkmark away from the text
+    gap: 4,
   },
   statusCheckedText: {
     fontSize: 15,
-    fontFamily: "Anuphan-Bold", // Ensure this matches your bold font
-    color: "#10B981", // The emerald green from the pic
+    fontFamily: "Anuphan-Bold",
+    color: "#10B981",
     fontWeight: "700",
   },
   statusPendingText: {
     fontSize: 15,
     fontFamily: "Anuphan-Bold",
-    color: "#94A3B8", // The muted grey from the pic
+    color: "#94A3B8",
     fontWeight: "700",
   },
 
@@ -1585,16 +1647,12 @@ const styles = StyleSheet.create({
     left: 0,
     right: 0,
     bottom: 0,
-    // FIX: Scaled height for iOS vs Android to fix "too long" look
-    // 0.51 on iPhone 15/16 Pro looks much more balanced than 0.6+
     height: Platform.OS === "ios" ? SCREEN_HEIGHT * 0.58 : SCREEN_HEIGHT * 0.51,
     backgroundColor: "white",
     borderTopLeftRadius: 32,
     borderTopRightRadius: 32,
     paddingTop: 8,
-    // Android Shadow
     elevation: 40,
-    // iOS Shadow
     shadowColor: "#000",
     shadowOffset: { width: 0, height: -10 },
     shadowOpacity: 0.15,
@@ -1687,9 +1745,9 @@ const styles = StyleSheet.create({
   },
   storeInspectButton: {
     marginTop: 20,
-    backgroundColor: "#64748B", // Slate-500 color
+    backgroundColor: "#64748B",
     borderRadius: 16,
-    paddingVertical: 16, // Thicker button
+    paddingVertical: 16,
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "center",
@@ -1755,10 +1813,10 @@ const styles = StyleSheet.create({
   },
   sheetHeaderRow: {
     flexDirection: "row",
-    alignItems: "center", // Level alignment
+    alignItems: "center",
     justifyContent: "space-between",
-    paddingHorizontal: 4, // Aligns with the handle
-    marginTop: -8, // Pulls the title up closer to the grey handle
+    paddingHorizontal: 4,
+    marginTop: -8,
     marginBottom: 4,
   },
 });

@@ -17,6 +17,7 @@ import {
   TouchableOpacity,
   View,
 } from "react-native";
+import { setOfficerSession } from "../../lib/officerSession";
 import { supabase } from "../../lib/supabase";
 
 export default function OfficerAuth() {
@@ -46,6 +47,11 @@ export default function OfficerAuth() {
 
       const isPasswordValid = await bcrypt.compare(password, officer.password);
       if (!isPasswordValid) throw new Error("รหัสผ่านไม่ถูกต้อง");
+
+      setOfficerSession({
+        officerId: officer.id,
+        officerName: officer.first_name,
+      });
 
       router.replace({
         pathname: "/(officer)",
