@@ -5,6 +5,7 @@ import { useState } from "react";
 import {
   ActivityIndicator,
   Alert,
+  Image,
   KeyboardAvoidingView,
   Platform,
   SafeAreaView,
@@ -58,21 +59,19 @@ export default function OfficerAuth() {
   };
 
   return (
-    <View style={styles.container}>
+    <SafeAreaView style={styles.container}>
       <StatusBar barStyle="dark-content" />
 
-      <SafeAreaView style={styles.headerSafeArea}>
-        <View style={styles.header}>
-          <TouchableOpacity
-            onPress={() => router.back()}
-            style={styles.backButton}
-          >
-            <Ionicons name="chevron-back" size={28} color="black" />
-          </TouchableOpacity>
-          <Text style={styles.headerTitle}>เข้าสู่ระบบสำหรับเจ้าหน้าที่</Text>
-          <View style={{ width: 28 }} />
-        </View>
-      </SafeAreaView>
+      <View style={styles.header}>
+        <TouchableOpacity
+          onPress={() => router.back()}
+          style={styles.backButton}
+        >
+          <Ionicons name="chevron-back" size={24} color="#111827" />
+        </TouchableOpacity>
+        <Text style={styles.headerTitle}>เข้าสู่ระบบสำหรับเจ้าหน้าที่</Text>
+        <View style={styles.headerSpacer} />
+      </View>
 
       <KeyboardAvoidingView
         behavior={Platform.OS === "ios" ? "padding" : "height"}
@@ -81,8 +80,15 @@ export default function OfficerAuth() {
         <ScrollView
           contentContainerStyle={styles.scrollContent}
           keyboardShouldPersistTaps="handled"
+          showsVerticalScrollIndicator={false}
         >
-          <View style={styles.formContainer}>
+          <Image
+            source={require("../../assets/images/officer_auth_pic.png")}
+            style={styles.illustration}
+            resizeMode="contain"
+          />
+
+          <View style={styles.formCard}>
             <View style={styles.inputWrapper}>
               <TextInput
                 style={styles.input}
@@ -103,7 +109,10 @@ export default function OfficerAuth() {
                 secureTextEntry={!showPassword}
                 placeholderTextColor="#94A3B8"
               />
-              <TouchableOpacity onPress={() => setShowPassword(!showPassword)}>
+              <TouchableOpacity
+                onPress={() => setShowPassword((s) => !s)}
+                hitSlop={10}
+              >
                 <Ionicons
                   name={showPassword ? "eye-outline" : "eye-off-outline"}
                   size={22}
@@ -112,7 +121,7 @@ export default function OfficerAuth() {
               </TouchableOpacity>
             </View>
 
-            <TouchableOpacity style={styles.forgotButton}>
+            <TouchableOpacity style={styles.forgotButton} activeOpacity={0.7}>
               <Text style={styles.forgotText}>ลืมรหัสผ่าน?</Text>
             </TouchableOpacity>
 
@@ -120,6 +129,7 @@ export default function OfficerAuth() {
               style={[styles.loginButton, loading && { opacity: 0.8 }]}
               onPress={handleLogin}
               disabled={loading}
+              activeOpacity={0.85}
             >
               {loading ? (
                 <ActivityIndicator color="white" />
@@ -130,56 +140,85 @@ export default function OfficerAuth() {
           </View>
         </ScrollView>
       </KeyboardAvoidingView>
-    </View>
+    </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: "white" },
-  headerSafeArea: { paddingTop: Platform.OS === "ios" ? 10 : 25 },
+  container: { flex: 1, backgroundColor: "#F3F4F6" },
   header: {
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
     paddingHorizontal: 16,
-    height: 60,
+    paddingTop: Platform.OS === "ios" ? 16 : 12,
+    paddingBottom: 12,
+    backgroundColor: "white",
+    borderBottomWidth: 1,
+    borderBottomColor: "#E5E7EB",
   },
   headerTitle: {
+    flex: 1,
+    textAlign: "center",
     fontSize: 20,
     fontFamily: "Anuphan-Bold",
-    fontWeight: "700",
-    color: "black",
+    fontWeight: "900",
+    color: "#111827",
   },
-  backButton: { padding: 4 },
+  backButton: {
+    width: 40,
+    height: 40,
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  headerSpacer: { width: 40 },
   scrollContent: {
     flexGrow: 1,
-    justifyContent: "flex-start",
-    paddingHorizontal: 24,
-    paddingBottom: 80,
+    paddingHorizontal: 16,
+    paddingTop: 28,
+    paddingBottom: 40,
+    alignItems: "center",
   },
-  formContainer: { width: "100%", marginTop: "50%" },
+  illustration: {
+    width: "100%",
+    height: 260,
+    marginBottom: 18,
+  },
+  formCard: {
+    width: "100%",
+    marginTop: 18,
+  },
   inputWrapper: {
     flexDirection: "row",
     alignItems: "center",
+    height: 60,
+    paddingHorizontal: 16,
+    borderRadius: 16,
     borderWidth: 1,
     borderColor: "#E2E8F0",
-    borderRadius: 8,
-    height: 58,
-    paddingHorizontal: 16,
-    marginBottom: 16,
+    backgroundColor: "#FFFFFF",
+    marginBottom: 14,
   },
   input: {
     flex: 1,
     fontSize: 16,
-    color: "#1E293B",
-    fontFamily: "Anuphan-Medium",
+    color: "#0F172A",
+    fontFamily: "Anuphan-Regular",
   },
-  forgotButton: { alignSelf: "flex-end", marginBottom: 35 },
-  forgotText: { fontSize: 15, color: "#1E293B", fontFamily: "Anuphan-Medium" },
+  forgotButton: {
+    alignSelf: "flex-end",
+    marginBottom: 24,
+  },
+  forgotText: {
+    fontSize: 15,
+    color: "#0F172A",
+    fontFamily: "Anuphan-Bold",
+    fontWeight: "700",
+  },
   loginButton: {
-    backgroundColor: "#6D7D92",
+    backgroundColor: "#1F5A3A",
     height: 56,
-    borderRadius: 8,
+    borderRadius: 16,
     justifyContent: "center",
     alignItems: "center",
   },
@@ -187,6 +226,6 @@ const styles = StyleSheet.create({
     color: "white",
     fontSize: 18,
     fontFamily: "Anuphan-Bold",
-    fontWeight: "700",
+    fontWeight: "900",
   },
 });

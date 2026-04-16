@@ -4,7 +4,7 @@ import * as ImagePicker from "expo-image-picker";
 import * as Print from "expo-print";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import * as Sharing from "expo-sharing";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import {
   Image,
   Modal,
@@ -18,6 +18,7 @@ import {
   TouchableOpacity,
   View,
 } from "react-native";
+import { getOfficerSession, setOfficerSession } from "../../lib/officerSession";
 import { supabase } from "../../lib/supabase";
 
 // ─── helpers ────────────────────────────────────────────────────────────────
@@ -53,6 +54,7 @@ interface VendorCardData {
 export default function OfficerInspectScreen() {
   const router = useRouter();
   const params = useLocalSearchParams<{
+    officerId?: string;
     shopName: string;
     district: string;
     zoneName: string;
@@ -63,6 +65,18 @@ export default function OfficerInspectScreen() {
     shopPhoto?: string;
     contractId: string;
   }>();
+  const session = getOfficerSession();
+  const officerId = params.officerId ?? session?.officerId ?? "";
+
+  useEffect(() => {
+    if (params.officerId && params.officerId !== session?.officerId) {
+      setOfficerSession({
+        officerId: String(params.officerId),
+        officerName: session?.officerName,
+      });
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [params.officerId]);
 
   const vendor: VendorCardData = {
     shopName: params.shopName ?? "–",
@@ -211,6 +225,10 @@ export default function OfficerInspectScreen() {
       alert("กรุณาให้คะแนนความสะอาดและความเป็นระเบียบ");
       return;
     }
+    if (!officerId) {
+      alert("ไม่พบข้อมูลเจ้าหน้าที่ (officerId) กรุณาเข้าสู่ระบบใหม่");
+      return;
+    }
     if (imageUris.length === 0) {
       alert("กรุณาถ่ายภาพหลักฐานอย่างน้อย 1 รูป");
       return;
@@ -235,6 +253,7 @@ export default function OfficerInspectScreen() {
 
       const { error: insertError } = await supabase.from("inspections").insert({
         contract_id: vendor.contractId,
+        officer_id: officerId,
         inspection_time: new Date().toISOString(),
         inspection_photo: urlData.publicUrl,
         note: notes || null,

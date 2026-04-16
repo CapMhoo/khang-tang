@@ -1111,7 +1111,7 @@ export default function ZoneMapScreen() {
                   </Text>
                 </View>
                 <Text style={styles.storeScoreText}>
-                  {storeLoading ? "..." : storeAvgScore ?? "—"}
+                  {storeLoading ? "..." : (storeAvgScore ?? "—")}
                 </Text>
               </View>
 
