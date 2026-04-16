@@ -1745,7 +1745,7 @@ const styles = StyleSheet.create({
   },
   storeInspectButton: {
     marginTop: 20,
-    backgroundColor: "#64748B",
+    backgroundColor: "#225A41",
     borderRadius: 16,
     paddingVertical: 16,
     flexDirection: "row",
