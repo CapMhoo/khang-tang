@@ -6,7 +6,7 @@ from langchain_community.embeddings import HuggingFaceEmbeddings
 from groq import Groq
 
 
-load_dotenv()
+load_dotenv(dotenv_path=os.path.join(os.path.dirname(__file__), '..', '.env.local'))
 
 # Check API key
 if not os.getenv("GROQ_API_KEY"):
@@ -58,6 +58,7 @@ IF asked which area still has an available slots : answer: "Please Contact the B
 ELSE IF : Asked for permitted area, answer the 5 permitted zones.
 
 Please refer to the BMA as 'หน่วยงานกรุงเทพมหานคร(BMA)' when answering in thai
+Also question : 'เอกสารที่ต้องใช้' or any questions related to the document please refer the how to use the app.pdf
 
 The following questions maybe asked : 1. ใช้แอปยังไง 2. ลงทะเบียนยังไง please refer to how to register initially and how to register and sell for their respected zones.
 Context:

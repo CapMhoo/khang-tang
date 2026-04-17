@@ -14,17 +14,24 @@ import { useRouter } from "expo-router";
 
 // const API_URL = process.env.EXPO_PUBLIC_API_URL;
 // for committing to main
-const API_URL = "http://172.20.10.7:8000";
+const API_URL = "http://172.20.10.11:8000";
 
 const formatTime = (date) => {
-  return date.toLocaleTimeString("th-TH", { hour: "2-digit", minute: "2-digit" });
+  return date.toLocaleTimeString("th-TH", {
+    hour: "2-digit",
+    minute: "2-digit",
+  });
 };
 
 const INITIAL_MESSAGE = {
   role: "assistant",
   content: "สวัสดีครับ\nผมช่วยตอบคำถามเกี่ยวกับการลงทะเบียนพื้นที่ค้าขาย",
   timestamp: formatTime(new Date()),
-  suggestions: ["ขั้นตอนการลงทะเบียน", "พื้นที่ค้าขายที่ยังว่าง", "เอกสารที่ต้องใช้"],
+  suggestions: [
+    "ขั้นตอนการลงทะเบียน",
+    "พื้นที่ค้าขายที่ยังว่าง",
+    "เอกสารที่ต้องใช้",
+  ],
 };
 
 async function queryRAG(question) {
@@ -100,7 +107,9 @@ function ChatBubble({ message, onSuggestionClick }) {
               );
             }
             return line ? (
-              <Text key={i} style={[styles.botText, i > 0 && { marginTop: 4 }]}>{line}</Text>
+              <Text key={i} style={[styles.botText, i > 0 && { marginTop: 4 }]}>
+                {line}
+              </Text>
             ) : (
               <View key={i} style={{ height: 4 }} />
             );
@@ -110,7 +119,11 @@ function ChatBubble({ message, onSuggestionClick }) {
         {message.suggestions && message.suggestions.length > 0 && (
           <View style={styles.chipsRow}>
             {message.suggestions.map((s) => (
-              <SuggestionChip key={s} label={s} onPress={() => onSuggestionClick(s)} />
+              <SuggestionChip
+                key={s}
+                label={s}
+                onPress={() => onSuggestionClick(s)}
+              />
             ))}
           </View>
         )}
@@ -161,7 +174,8 @@ export default function VendorChat() {
         ...prev,
         {
           role: "assistant",
-          content: "ขออภัยครับ เกิดข้อผิดพลาดในการเชื่อมต่อ กรุณาลองใหม่อีกครั้ง",
+          content:
+            "ขออภัยครับ เกิดข้อผิดพลาดในการเชื่อมต่อ กรุณาลองใหม่อีกครั้ง",
           timestamp: formatTime(new Date()),
         },
       ]);
@@ -175,7 +189,7 @@ export default function VendorChat() {
       style={styles.container}
       behavior={Platform.OS === "ios" ? "padding" : "height"}
     >
-     {/* Header */}
+      {/* Header */}
       <View style={styles.header}>
         <TouchableOpacity onPress={() => router.back()} style={styles.backBtn}>
           <Text style={styles.backArrow}>‹</Text>
@@ -226,7 +240,10 @@ export default function VendorChat() {
           returnKeyType="send"
         />
         <TouchableOpacity
-          style={[styles.sendBtn, (!input.trim() || loading) && styles.sendBtnDisabled]}
+          style={[
+            styles.sendBtn,
+            (!input.trim() || loading) && styles.sendBtnDisabled,
+          ]}
           onPress={() => sendMessage(input)}
           disabled={!input.trim() || loading}
         >
@@ -259,7 +276,12 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
   },
-  avatarInner: { width: 24, height: 24, borderRadius: 12, backgroundColor: GREEN },
+  avatarInner: {
+    width: 24,
+    height: 24,
+    borderRadius: 12,
+    backgroundColor: GREEN,
+  },
   headerName: { fontWeight: "600", fontSize: 14, color: "#111827" },
   headerStatus: { fontSize: 11, color: GREEN },
   messageList: { flex: 1 },
@@ -290,7 +312,12 @@ const styles = StyleSheet.create({
     maxWidth: "75%",
   },
   userText: { color: "white", fontSize: 14, lineHeight: 22 },
-  botRow: { flexDirection: "row", alignItems: "flex-end", gap: 8, marginBottom: 16 },
+  botRow: {
+    flexDirection: "row",
+    alignItems: "flex-end",
+    gap: 8,
+    marginBottom: 16,
+  },
   botBubble: {
     backgroundColor: "white",
     borderRadius: 16,
@@ -311,10 +338,27 @@ const styles = StyleSheet.create({
     padding: 12,
   },
   typingText: { fontSize: 20, color: "#9ca3af", letterSpacing: 4 },
-  chipsRow: { flexDirection: "row", flexWrap: "wrap", gap: 8, marginTop: 8, paddingHorizontal: 4 },
-  chip: { borderWidth: 1, borderColor: GREEN, borderRadius: 999, paddingHorizontal: 12, paddingVertical: 6 },
+  chipsRow: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 8,
+    marginTop: 8,
+    paddingHorizontal: 4,
+  },
+  chip: {
+    borderWidth: 1,
+    borderColor: GREEN,
+    borderRadius: 999,
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+  },
   chipText: { fontSize: 12, color: GREEN, fontWeight: "500" },
-  timestamp: { fontSize: 11, color: "#9ca3af", marginTop: 4, paddingHorizontal: 4 },
+  timestamp: {
+    fontSize: 11,
+    color: "#9ca3af",
+    marginTop: 4,
+    paddingHorizontal: 4,
+  },
   inputRow: {
     backgroundColor: "white",
     borderTopWidth: 1,
@@ -344,12 +388,12 @@ const styles = StyleSheet.create({
   sendBtnDisabled: { opacity: 0.4 },
   sendIcon: { color: "white", fontSize: 16 },
   backBtn: {
-  paddingRight: 8,
-  justifyContent: "center",
+    paddingRight: 8,
+    justifyContent: "center",
   },
   backArrow: {
     fontSize: 36,
     color: "#333",
     lineHeight: 40,
-},
+  },
 });
