@@ -215,7 +215,7 @@ export default function VendorAuth() {
                     setIsLogin(true);
                   } else {
                     // ถ้าอยู่หน้า Login อยู่แล้ว ให้ย้อนกลับไปหน้าก่อนหน้า (เช่น หน้า Role Selection)
-                    router.back();
+                    router.replace("/");
                   }
                 }}
                 style={styles.backButton}

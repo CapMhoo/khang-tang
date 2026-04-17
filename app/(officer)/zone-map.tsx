@@ -5,6 +5,7 @@ import { useRouter } from "expo-router";
 import React, { useEffect, useMemo, useState } from "react";
 import {
   ActivityIndicator,
+  Alert,
   Dimensions,
   Platform,
   Pressable,
@@ -13,6 +14,7 @@ import {
   StatusBar,
   StyleSheet,
   Text,
+  TouchableOpacity,
   View,
 } from "react-native";
 import { Gesture, GestureDetector } from "react-native-gesture-handler";
@@ -87,7 +89,7 @@ export default function ZoneMapScreen() {
   >({});
 
   const [activeTab, setActiveTab] = useState<"map" | "list">("map");
-  const [selectedDistrictIndex, setSelectedDistrictIndex] = useState(0);
+  const [selectedDistrict, setSelectedDistrict] = useState<string>("เลือกเขต");
   const [expandedZoneIds, setExpandedZoneIds] = useState<Set<string>>(
     () => new Set(),
   );
@@ -242,12 +244,30 @@ export default function ZoneMapScreen() {
     () => ["ทั้งหมด", ...Array.from(new Set(zones.map((z) => z.district)))],
     [zones],
   );
-  const selectedDistrict =
-    districtOptions[selectedDistrictIndex] ?? districtOptions[0];
+
+  const handleSelectDistrict = () => {
+    if (districtOptions.length === 0) {
+      Alert.alert("ขออภัย", "ไม่พบข้อมูลเขตในระบบ");
+      return;
+    }
+
+    // เพิ่มตัวเลือก "ทั้งหมด" เพื่อให้ User กลับมาดูทุกเขตได้
+    const options = ["ดูทั้งหมด", ...districtOptions.slice(1)];
+
+    Alert.alert("เลือกเขต", "กรุณาเลือกเขตที่ต้องการค้นหา", [
+      ...options.map((name) => ({
+        text: name,
+        onPress: () => {
+          setSelectedDistrict(name === "ดูทั้งหมด" ? "เลือกเขต" : name);
+        },
+      })),
+      { text: "ยกเลิก", style: "cancel" },
+    ]);
+  };
 
   const filteredZones = useMemo(() => {
     return zones.filter(
-      (z) => selectedDistrict === "ทั้งหมด" || z.district === selectedDistrict,
+      (z) => selectedDistrict === "เลือกเขต" || z.district === selectedDistrict,
     );
   }, [zones, selectedDistrict]);
 
@@ -274,10 +294,6 @@ export default function ZoneMapScreen() {
   const selectedZoneDetailsError = selectedZone
     ? (zoneDetailsErrorById[selectedZone.id] ?? null)
     : null;
-
-  const cycleDistrict = () => {
-    setSelectedDistrictIndex((i) => (i + 1) % districtOptions.length);
-  };
 
   const formatTimeHHmm = (value: string | null | undefined) => {
     if (!value) return undefined;
@@ -712,14 +728,14 @@ export default function ZoneMapScreen() {
 
         <Text style={styles.headerTitle}>แผนที่โซนค้าขาย</Text>
 
-        <Pressable onPress={cycleDistrict} style={styles.districtPill}>
-          <Text style={styles.districtText}>
-            {selectedDistrict === "ทั้งหมด"
-              ? "เขตทั้งหมด"
-              : `เขต${selectedDistrict}`}
-          </Text>
-          <Ionicons name="chevron-down" size={18} color="#111827" />
-        </Pressable>
+        <TouchableOpacity
+          style={styles.districtDropdown}
+          onPress={handleSelectDistrict}
+          activeOpacity={0.7}
+        >
+          <Text style={styles.districtDropdownText}>{selectedDistrict}</Text>
+          <Ionicons name="chevron-down" size={18} color="#1A202C" />
+        </TouchableOpacity>
       </View>
 
       <View style={styles.tabPill}>
@@ -1415,19 +1431,24 @@ const styles = StyleSheet.create({
     flex: 1,
     fontFamily: "Anuphan-Bold",
   },
-  districtPill: {
+  districtDropdown: {
     flexDirection: "row",
     alignItems: "center",
-    marginLeft: 8,
-    gap: 8,
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    borderWidth: 1.5,
+    borderColor: "#E2E8F0",
+    borderRadius: 22,
+    gap: 6,
     backgroundColor: "white",
-    borderWidth: 1,
-    borderColor: "#E5E7EB",
-    borderRadius: 14,
-    paddingHorizontal: 10,
-    height: 32,
   },
-  districtText: { fontSize: 13, fontWeight: "800", color: "#111827" },
+
+  districtDropdownText: {
+    fontSize: 14,
+    fontWeight: "600",
+    color: "#1A202C",
+    fontFamily: "Anuphan-Bold",
+  },
 
   tabPill: {
     flexDirection: "row",
