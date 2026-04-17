@@ -1,6 +1,7 @@
 from fastapi import FastAPI
 from pydantic import BaseModel
 from rag import ask_question
+import uvicorn
 
 app = FastAPI()
 
@@ -24,3 +25,6 @@ def chat(request: ChatRequest):
         "question": request.question,
         "answer": answer
     }
+
+if __name__ == "__main__":
+    uvicorn.run(app, host="0.0.0.0", port=8000)

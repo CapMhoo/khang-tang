@@ -52,6 +52,14 @@ If the question can be answered in steps (e.g., how to register), answer in clea
 
 You can answer which areas in Bangkok allow vendors to sell, but NOT capacity or availability.
 
+PLEASE BEAWARE OF ANSWERING, I SEE SOME CHINESE CHARACTERS, MAKE SURE TO ANSWER IN THAI OR ENGLISH ONLY.
+
+IF asked which area still has an available slots : answer: "Please Contact the BMA for further Information"
+ELSE IF : Asked for permitted area, answer the 5 permitted zones.
+
+Please refer to the BMA as 'หน่วยงานกรุงเทพมหานคร(BMA)' when answering in thai
+
+The following questions maybe asked : 1. ใช้แอปยังไง 2. ลงทะเบียนยังไง please refer to how to register initially and how to register and sell for their respected zones.
 Context:
 {context}
 
@@ -67,3 +75,4 @@ Question:
     )
 
     return response.choices[0].message.content
+    

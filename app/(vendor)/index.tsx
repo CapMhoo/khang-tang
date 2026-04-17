@@ -424,8 +424,8 @@ export default function VendorDashboard() {
         </ScrollView>
 
         {/* Chatbot Floating Button */}
-        <TouchableOpacity style={styles.chatBotButton}>
-          <Text style={styles.chatBotText}>AI{"\n"}Chat bot</Text>
+        <TouchableOpacity style={styles.chatBotButton} onPress={() => router.push("/(vendor)/chat")}>
+        <Text style={styles.chatBotText}>AI{"\n"}Chat bot</Text>
         </TouchableOpacity>
 
         <Modal
@@ -594,8 +594,8 @@ export default function VendorDashboard() {
       </ScrollView>
       {/* Floating Chat Button */}
       <TouchableOpacity
-        style={styles.floatingChatButton}
-        onPress={() => console.log("Open Chatbot")}
+      style={styles.floatingChatButton}
+      onPress={() => router.push("/(vendor)/chat")}
       >
         <Ionicons name="chatbubble-ellipses" size={28} color="white" />
       </TouchableOpacity>
