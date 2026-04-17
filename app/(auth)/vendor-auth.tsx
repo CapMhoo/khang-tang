@@ -502,7 +502,7 @@ const styles = StyleSheet.create({
   },
   container: {
     flex: 1,
-    backgroundColor: "white",
+    backgroundColor: "#F3F4F6",
   },
   header: {
     flexDirection: "row",

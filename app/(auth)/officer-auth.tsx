@@ -160,8 +160,6 @@ const styles = StyleSheet.create({
     paddingTop: Platform.OS === "ios" ? 16 : 12,
     paddingBottom: 12,
     backgroundColor: "white",
-    borderBottomWidth: 1,
-    borderBottomColor: "#E5E7EB",
   },
   headerTitle: {
     flex: 1,
