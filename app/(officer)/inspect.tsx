@@ -79,15 +79,15 @@ export default function OfficerInspectScreen() {
   }, [params.officerId]);
 
   const vendor: VendorCardData = {
-    shopName:     params.shopName     || "–",
-    district:     params.district     || "–",
-    zoneName:     params.zoneName     || "–",
-    ownerName:    params.ownerName    || "–",
-    productType:  params.productType  || "–",
-    checkinTime:  params.checkinTime  || "–",
-    checkoutTime: params.checkoutTime || "–",
-    shopPhoto:    params.shopPhoto    || undefined,
-    contractId:   params.contractId   || "",
+    shopName: params.shopName ?? "–",
+    district: params.district ?? "–",
+    zoneName: params.zoneName ?? "–",
+    ownerName: params.ownerName ?? "–",
+    productType: params.productType ?? "–",
+    checkinTime: params.checkinTime ?? "–",
+    checkoutTime: params.checkoutTime ?? "–",
+    shopPhoto: params.shopPhoto,
+    contractId: params.contractId ?? "",
   };
 
   // ── state ──────────────────────────────────────────────────────────────────
@@ -643,14 +643,12 @@ const reviewRowStyles = StyleSheet.create({
     fontSize: 12,
     color: "#6B7280",
     marginBottom: 2,
-    fontWeight: "800",
-    fontFamily: "Anuphan-Medium",
+    fontFamily: "Anuphan-SemiBold",
   },
   value: {
     fontSize: 15,
     color: "#111827",
-    fontWeight: "500",
-    fontFamily: "Anuphan-Regular",
+    fontFamily: "Anuphan-Medium",
   },
 });
 
@@ -801,7 +799,7 @@ const styles = StyleSheet.create({
   // ── Notes ──
   textArea: {
     backgroundColor: "#fff",
-    borderWidth: 1.5,
+    borderWidth: 0.75,
     borderColor: "#E5E7EB",
     borderRadius: 10,
     paddingHorizontal: 14,
@@ -810,7 +808,7 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontFamily: "Anuphan-Medium",
     color: "#111827",
-    minHeight: 96,
+    minHeight: 128,
   },
 
   // ── Photos ──
@@ -874,7 +872,7 @@ const styles = StyleSheet.create({
   },
   rowDivider: { height: 1, backgroundColor: "#F3F4F6", marginVertical: 8 },
   checkinPair: { flexDirection: "row", marginTop: 4 },
-  reviewLabel: { fontSize: 12, color: "#6B7280", fontFamily: "Anuphan-Medium" },
+  reviewLabel: { fontSize: 12, color: "#6B7280", fontFamily: "Anuphan-SemiBold" },
   reviewValue: {
     fontSize: 15,
     color: "#111827",
