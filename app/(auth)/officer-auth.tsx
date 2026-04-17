@@ -70,7 +70,7 @@ export default function OfficerAuth() {
 
       <View style={styles.header}>
         <TouchableOpacity
-          onPress={() => router.back()}
+          onPress={() => router.replace("/")}
           style={styles.backButton}
         >
           <Ionicons name="chevron-back" size={24} color="#111827" />

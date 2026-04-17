@@ -4,6 +4,7 @@ import { useLocalSearchParams, useRouter } from "expo-router";
 import * as WebBrowser from "expo-web-browser";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
+  Alert,
   Animated,
   Image,
   Modal,
@@ -14,6 +15,7 @@ import {
   StatusBar,
   StyleSheet,
   Text,
+  TouchableOpacity,
   View,
 } from "react-native";
 import { getOfficerSession, setOfficerSession } from "../../lib/officerSession";
@@ -57,7 +59,7 @@ export default function OfficerHomeScreen() {
 
   const [zones, setZones] = useState<Zone[]>([]);
   const [zonesLoading, setZonesLoading] = useState(true);
-  const [selectedDistrictIndex, setSelectedDistrictIndex] = useState(0);
+  const [selectedDistrict, setSelectedDistrict] = useState<string>("ทั้งหมด");
   const [summaryLoading, setSummaryLoading] = useState(false);
   const [summary, setSummary] = useState({
     totalVendors: 0,
@@ -85,12 +87,12 @@ export default function OfficerHomeScreen() {
       setZonesLoading(true);
       const { data, error } = await supabase
         .from("zones")
-        .select("id, district_name");
+        .select("id, district");
       if (!error && data) {
         setZones(
           data.map((z: any) => ({
             id: String(z.id),
-            district: z.district_name || "ไม่ระบุเขต",
+            district: z.district || "ไม่ระบุเขต",
           })),
         );
       }
@@ -104,7 +106,22 @@ export default function OfficerHomeScreen() {
     return ["ทั้งหมด", ...districts];
   }, [zones]);
 
-  const selectedDistrict = districtOptions[selectedDistrictIndex] || "ทั้งหมด";
+  const handleSelectDistrict = () => {
+    if (districtOptions.length === 0) {
+      Alert.alert("ขออภัย", "ไม่พบข้อมูลเขตในระบบ");
+      return;
+    }
+
+    Alert.alert("เลือกเขต", "กรุณาเลือกเขตที่ต้องการค้นหา", [
+      ...districtOptions.map((name) => ({
+        text: name,
+        onPress: () => {
+          setSelectedDistrict(name);
+        },
+      })),
+      { text: "ยกเลิก", style: "cancel" },
+    ]);
+  };
 
   const fetchSummary = useCallback(async () => {
     if (zonesLoading || zones.length === 0) return;
@@ -450,19 +467,18 @@ export default function OfficerHomeScreen() {
           <View style={styles.summaryCard}>
             <View style={styles.summaryHeader}>
               <Text style={styles.summaryHeaderTitle}>ภาพรวม</Text>
-              <Pressable
+              <TouchableOpacity
                 style={styles.summaryDistrictPill}
-                onPress={() =>
-                  setSelectedDistrictIndex(
-                    (i) => (i + 1) % districtOptions.length,
-                  )
-                }
+                onPress={handleSelectDistrict}
+                activeOpacity={0.7}
               >
                 <Text style={styles.summaryDistrictText}>
-                  เขต{selectedDistrict}
+                  {selectedDistrict === "ทั้งหมด"
+                    ? "เขตทั้งหมด"
+                    : `เขต${selectedDistrict}`}
                 </Text>
                 <Ionicons name="chevron-down" size={14} color="white" />
-              </Pressable>
+              </TouchableOpacity>
             </View>
 
             <View style={styles.summaryGrid}>
