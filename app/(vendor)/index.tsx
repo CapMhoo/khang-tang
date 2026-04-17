@@ -1,7 +1,7 @@
 import { Ionicons } from "@expo/vector-icons";
 import { decode } from "base64-arraybuffer";
 import * as ImagePicker from "expo-image-picker";
-import { useLocalSearchParams, useRouter } from "expo-router";
+import { Stack, useLocalSearchParams, useRouter } from "expo-router";
 import React, { useState } from "react";
 import {
   Alert,
@@ -460,6 +460,12 @@ export default function VendorDashboard() {
   // ตามด้วย return ( เดิมของคุณ...
   return (
     <View style={styles.container}>
+      <Stack.Screen
+        options={{
+          gestureEnabled: false,
+          headerShown: false, // Ensure header remains hidden if you're using a custom one
+        }}
+      />
       <StatusBar
         barStyle="dark-content"
         translucent
