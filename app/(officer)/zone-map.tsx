@@ -1237,11 +1237,30 @@ export default function ZoneMapScreen() {
                   router.push({
                     pathname: "/(officer)/inspect",
                     params: {
-                      contractId: storeContract?.id,
+                      // IDs
+                      contractId: storeContract?.id ?? "",
                       vendorId: storeSheet.vendorId,
                       zoneId: storeSheet.zoneId,
+
+                      // Vendor card display data
                       shopName:
                         storeContract?.shop_name?.trim() || storeSheet.shopName,
+                      district:
+                        zones.find((z) => z.id === storeSheet.zoneId)
+                          ?.district ?? "",
+                      zoneName: storeSheet.zoneName,
+                      ownerName:
+                        `${storeContract?.vendors?.first_name ?? ""} ${storeContract?.vendors?.last_name ?? ""}`.trim(),
+                      productType: storeContract?.product_type?.trim() ?? "",
+
+                      // Check-in / check-out times (already formatted as "HH:MM")
+                      checkinTime:
+                        formatTimeHHmm(storeCheckin?.checkin_time) ?? "–",
+                      checkoutTime:
+                        formatTimeHHmm(storeCheckin?.checkout_time) ?? "–",
+
+                      // Optional shop photo (use the vendor's check-in photo as the card thumbnail)
+                      shopPhoto: storeCheckin?.checkin_photo ?? "",
                     },
                   })
                 }

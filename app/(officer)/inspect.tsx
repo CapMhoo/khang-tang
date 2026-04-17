@@ -322,7 +322,7 @@ export default function OfficerInspectScreen() {
   // ─────────────────────────────────────────────────────────────────────────
   //  FORM VIEW (Page 9)
   // ─────────────────────────────────────────────────────────────────────────
-  const FormView = () => (
+  const formView = (
     <View>
       <VendorCard />
 
@@ -462,7 +462,7 @@ export default function OfficerInspectScreen() {
   // ─────────────────────────────────────────────────────────────────────────
   //  REVIEW VIEW (Page 10)
   // ─────────────────────────────────────────────────────────────────────────
-  const ReviewView = () => (
+  const reviewView = (
     <View>
       <Text style={styles.reviewTitle}>ตรวจสอบข้อมูลก่อนบันทึก</Text>
 
@@ -587,7 +587,6 @@ export default function OfficerInspectScreen() {
         <Text style={styles.headerTitle}>
           {isReviewing ? "ตรวจสอบข้อมูลก่อนบันทึก" : "ตรวจสอบร้านค้า"}
         </Text>
-        <View style={{ width: 42 }} />
       </View>
 
       <ScrollView
@@ -595,7 +594,7 @@ export default function OfficerInspectScreen() {
         contentContainerStyle={styles.scroll}
         keyboardShouldPersistTaps="handled"
       >
-        {isReviewing ? <ReviewView /> : <FormView />}
+        {isReviewing ? reviewView : formView}
       </ScrollView>
 
       {/* Lightbox */}
@@ -640,8 +639,17 @@ function ReviewRow({ label, value }: { label: string; value: string }) {
   );
 }
 const reviewRowStyles = StyleSheet.create({
-  label: { fontSize: 12, color: "#6B7280", marginBottom: 2, fontWeight: "800" },
-  value: { fontSize: 15, color: "#111827", fontWeight: "500" },
+  label: {
+    fontSize: 12,
+    color: "#6B7280",
+    marginBottom: 2,
+    fontFamily: "Anuphan-SemiBold",
+  },
+  value: {
+    fontSize: 15,
+    color: "#111827",
+    fontFamily: "Anuphan-Medium",
+  },
 });
 
 // ─── styles ───────────────────────────────────────────────────────────────
@@ -650,7 +658,7 @@ const styles = StyleSheet.create({
   header: {
     flexDirection: "row",
     alignItems: "center",
-    justifyContent: "space-between",
+    justifyContent: "flex-start",
     paddingHorizontal: 16,
     paddingVertical: 10,
     backgroundColor: "#fff",
@@ -664,8 +672,13 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
   },
-  headerTitle: { fontSize: 17, fontWeight: "800", color: "#111827" },
-  scroll: { padding: 16, paddingBottom: 48 },
+  headerTitle: {
+    fontSize: 18,
+    fontFamily: "Anuphan-Bold",
+    color: "#111827",
+    marginLeft: 4,
+  },
+  scroll: { padding: 20, paddingBottom: 20 },
 
   // ── Vendor card ──
   vendorCard: {
@@ -689,7 +702,7 @@ const styles = StyleSheet.create({
   vendorThumbPlaceholder: { alignItems: "center", justifyContent: "center" },
   vendorName: {
     fontSize: 16,
-    fontWeight: "700",
+    fontFamily: "Anuphan-Bold",
     color: "#111827",
     marginBottom: 3,
   },
@@ -699,8 +712,16 @@ const styles = StyleSheet.create({
     gap: 3,
     marginBottom: 2,
   },
-  vendorMetaText: { fontSize: 12, color: "#6B7280" },
-  vendorSubMeta: { fontSize: 12, color: "#6B7280" },
+  vendorMetaText: {
+    fontSize: 12,
+    fontFamily: "Anuphan-Medium",
+    color: "#6B7280",
+  },
+  vendorSubMeta: {
+    fontSize: 12,
+    fontFamily: "Anuphan-Medium",
+    color: "#6B7280",
+  },
   divider: { height: 1, backgroundColor: "#F3F4F6", marginVertical: 12 },
   checkinRow: { flexDirection: "row" },
   checkinBlock: { flex: 1 },
@@ -711,18 +732,18 @@ const styles = StyleSheet.create({
   },
   checkinLabel: {
     fontSize: 12,
-    fontWeight: "600",
-    color: "#6B7280",
+    fontFamily: "Anuphan-SemiBold",
+    color: "#64748B",
     marginBottom: 2,
   },
-  checkinTime: { fontSize: 16, fontWeight: "600", color: "#111827" },
+  checkinTime: { fontSize: 16, fontFamily: "Anuphan-Medium", color: "#111827" },
 
   // ── Sections ──
-  section: { marginBottom: 20 },
+  section: { marginBottom: 18 },
   sectionLabel: {
     fontSize: 14,
-    fontWeight: "600",
-    color: "#374151",
+    fontFamily: "Anuphan-Bold",
+    color: "#1E293B", // slate-800
     marginBottom: 10,
   },
 
@@ -735,12 +756,16 @@ const styles = StyleSheet.create({
     justifyContent: "space-between",
     marginTop: 6,
   },
-  ratingHintText: { fontSize: 11, color: "#64748B" },
+  ratingHintText: {
+    fontSize: 11,
+    color: "#64748B",
+    fontFamily: "Anuphan-Medium",
+  },
   ratingRow: { flexDirection: "row", gap: 8 },
   ratingBox: {
     flex: 1,
     height: 52,
-    borderWidth: 1.5,
+    borderWidth: 0.75,
     borderColor: "#E5E7EB",
     borderRadius: 10,
     backgroundColor: "#fff",
@@ -748,7 +773,7 @@ const styles = StyleSheet.create({
     justifyContent: "center",
   },
   ratingBoxSelected: { backgroundColor: "#10B981", borderColor: "#10B981" },
-  ratingNum: { fontSize: 18, fontWeight: "600", color: "#374151" },
+  ratingNum: { fontSize: 18, fontFamily: "Anuphan-SemiBold", color: "#1E293B" },
   ratingNumSelected: { color: "#fff" },
 
   // ── Checkbox ──
@@ -760,23 +785,30 @@ const styles = StyleSheet.create({
     backgroundColor: "#fff",
     borderRadius: 10,
     padding: 12,
-    borderWidth: 1,
+    borderWidth: 0.75,
     borderColor: "#E5E7EB",
   },
-  checkboxLabel: { fontSize: 14, color: "#374151", flex: 1, lineHeight: 20 },
+  checkboxLabel: {
+    fontSize: 14,
+    fontFamily: "Anuphan-Medium",
+    color: "#374151",
+    flex: 1,
+    lineHeight: 20,
+  },
 
   // ── Notes ──
   textArea: {
     backgroundColor: "#fff",
-    borderWidth: 1.5,
+    borderWidth: 0.75,
     borderColor: "#E5E7EB",
     borderRadius: 10,
     paddingHorizontal: 14,
     paddingTop: 12,
     paddingBottom: 12,
     fontSize: 14,
+    fontFamily: "Anuphan-Medium",
     color: "#111827",
-    minHeight: 96,
+    minHeight: 128,
   },
 
   // ── Photos ──
@@ -817,20 +849,20 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     marginTop: 8,
   },
-  primaryBtnText: { fontSize: 16, fontWeight: "700", color: "#fff" },
+  primaryBtnText: { fontSize: 16, fontFamily: "Anuphan-Bold", color: "#fff" },
 
   // ── Review ──
   reviewTitle: {
     fontSize: 20,
-    fontWeight: "800",
+    fontFamily: "Anuphan-SemiBold",
     color: "#111827",
-    marginBottom: 16,
+    marginBottom: 20,
   },
   reviewCard: {
     backgroundColor: "#fff",
     borderRadius: 14,
     padding: 16,
-    marginBottom: 10,
+    marginBottom: 20,
     shadowColor: "#000",
     shadowOffset: { width: 0, height: 1 },
     shadowOpacity: 0.04,
@@ -840,14 +872,18 @@ const styles = StyleSheet.create({
   },
   rowDivider: { height: 1, backgroundColor: "#F3F4F6", marginVertical: 8 },
   checkinPair: { flexDirection: "row", marginTop: 4 },
-  reviewLabel: { fontSize: 12, color: "#6B7280", fontWeight: "500" },
+  reviewLabel: { fontSize: 12, color: "#6B7280", fontFamily: "Anuphan-SemiBold" },
   reviewValue: {
     fontSize: 15,
     color: "#111827",
-    fontWeight: "500",
+    fontFamily: "Anuphan-Medium",
     marginTop: 2,
   },
-  violationText: { color: "#EF4444", fontSize: 14 },
+  violationText: {
+    color: "#EF4444",
+    fontFamily: "Anuphan-Medium",
+    fontSize: 14,
+  },
   pdfLink: {
     backgroundColor: "white",
     borderWidth: 1,
@@ -860,9 +896,13 @@ const styles = StyleSheet.create({
     gap: 6,
     marginTop: 8,
   },
-  pdfLinkText: { fontSize: 16, color: "#475569", fontWeight: "400" },
+  pdfLinkText: { fontSize: 16, color: "#475569", fontFamily: "Anuphan-Medium" },
   backLink: { paddingVertical: 14, alignItems: "center" },
-  backLinkText: { fontSize: 14, color: "#6B7280", fontWeight: "600" },
+  backLinkText: {
+    fontSize: 14,
+    color: "#6B7280",
+    fontFamily: "Anuphan-Medium",
+  },
 
   // ── Lightbox ──
   lightboxOverlay: {
